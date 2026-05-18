@@ -1,137 +1,324 @@
 import asyncio
+import os
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
-from telegram import Update
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
+
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters
 )
-import os
+
+# YOUR ADMIN ID
+ADMIN_ID = 7638053663
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-bot_data = {}
+channels = set()
+
+last_messages = {}
+
+stats = {
+    "sent": 0,
+    "failed": 0
+}
+
+broadcast_data = {
+    "button_text": "",
+    "button_url": ""
+}
+
+# ADMIN CHECK
+def admin_only(user_id):
+    return user_id == ADMIN_ID
 
 # START
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not admin_only(update.effective_user.id):
+        return
+
     text = """
-✅ Auto Post Bot Started
+🚀 PRIVATE BROADCAST BOT ACTIVE
 
 Commands:
 
-/setmessage Your Message
-/setlink Your Link
-/startpost
-/stoppost
+/broadcast YOUR MESSAGE
+
+/button TEXT | URL
+
+/deletebroadcast
+
+/channels
+
+/subs
+
+/stats
 """
 
     await update.message.reply_text(text)
 
-# SET MESSAGE
-async def setmessage(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# AUTO DETECT CHANNELS/GROUPS
+async def detect_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    chat_id = update.effective_chat.id
+    chat = update.effective_chat
 
-    message = " ".join(context.args)
+    if chat.type in ["channel", "supergroup"]:
 
-    if not message:
-        await update.message.reply_text("❌ Send message")
+        channels.add(chat.id)
+
+# BUTTON SETUP
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not admin_only(update.effective_user.id):
         return
 
-    if chat_id not in bot_data:
-        bot_data[chat_id] = {}
+    data = " ".join(context.args)
 
-    bot_data[chat_id]["message"] = message
+    if "|" not in data:
 
-    await update.message.reply_text("✅ Message Saved")
+        await update.message.reply_text(
+            "Use:\n/button TEXT | URL"
+        )
 
-# SET LINK
-async def setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    chat_id = update.effective_chat.id
-
-    link = " ".join(context.args)
-
-    if not link:
-        await update.message.reply_text("❌ Send link")
         return
 
-    if chat_id not in bot_data:
-        bot_data[chat_id] = {}
+    text, url = data.split("|")
 
-    bot_data[chat_id]["link"] = link
+    broadcast_data["button_text"] = text.strip()
 
-    await update.message.reply_text("✅ Link Saved")
+    broadcast_data["button_url"] = url.strip()
 
-# START POST
-async def startpost(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "✅ Button Saved"
+    )
 
-    chat_id = update.effective_chat.id
+# TEXT BROADCAST
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if chat_id not in bot_data:
-        bot_data[chat_id] = {}
+    if not admin_only(update.effective_user.id):
+        return
 
-    bot_data[chat_id]["active"] = True
+    text = " ".join(context.args)
 
-    await update.message.reply_text("🚀 Auto Posting Started")
+    if not text:
 
-# STOP POST
-async def stoppost(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text(
+            "❌ Send message"
+        )
 
-    chat_id = update.effective_chat.id
+        return
 
-    if chat_id in bot_data:
-        bot_data[chat_id]["active"] = False
+    keyboard = None
 
-    await update.message.reply_text("🛑 Auto Posting Stopped")
+    if broadcast_data["button_text"]:
 
-# AUTO POST LOOP
-async def autopost(application):
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    broadcast_data["button_text"],
+                    url=broadcast_data["button_url"]
+                )
+            ]
+        ])
 
-    while True:
+    success = 0
 
-        for chat_id, data in bot_data.items():
+    failed = 0
 
-            if data.get("active"):
+    for channel_id in channels:
 
-                message = data.get("message", "")
-                link = data.get("link", "")
+        try:
 
-                text = f"{message}\n\n{link}"
+            msg = await context.bot.send_message(
+                chat_id=channel_id,
+                text=text,
+                reply_markup=keyboard
+            )
 
-                try:
-                    await application.bot.send_message(
-                        chat_id=chat_id,
-                        text=text
-                    )
+            last_messages[channel_id] = msg.message_id
 
-                except Exception as e:
-                    print(e)
+            success += 1
 
-        await asyncio.sleep(60)
+            stats["sent"] += 1
 
-# POST INIT
-async def post_init(application):
-    asyncio.create_task(autopost(application))
+        except Exception as e:
+
+            print(e)
+
+            failed += 1
+
+            stats["failed"] += 1
+
+    await update.message.reply_text(
+        f"✅ Sent to {success} chats\n❌ Failed: {failed}"
+    )
+
+# DELETE LAST BROADCAST
+async def deletebroadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not admin_only(update.effective_user.id):
+        return
+
+    deleted = 0
+
+    for channel_id, msg_id in last_messages.items():
+
+        try:
+
+            await context.bot.delete_message(
+                chat_id=channel_id,
+                message_id=msg_id
+            )
+
+            deleted += 1
+
+        except Exception as e:
+            print(e)
+
+    await update.message.reply_text(
+        f"🗑 Deleted from {deleted} chats"
+    )
+
+# CHANNEL LIST
+async def listchannels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not admin_only(update.effective_user.id):
+        return
+
+    text = "\n".join(
+        [str(x) for x in channels]
+    )
+
+    if not text:
+        text = "No channels detected"
+
+    await update.message.reply_text(text)
+
+# SUBSCRIBER COUNT
+async def subs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not admin_only(update.effective_user.id):
+        return
+
+    result = ""
+
+    total = 0
+
+    for channel_id in channels:
+
+        try:
+
+            count = await context.bot.get_chat_member_count(
+                channel_id
+            )
+
+            total += count
+
+            result += f"{channel_id} → {count}\n"
+
+        except:
+            pass
+
+    result += f"\nTotal Subs: {total}"
+
+    await update.message.reply_text(result)
+
+# ANALYTICS
+async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not admin_only(update.effective_user.id):
+        return
+
+    text = f"""
+📊 Analytics
+
+Connected Chats: {len(channels)}
+
+Sent Posts: {stats['sent']}
+
+Failed Posts: {stats['failed']}
+"""
+
+    await update.message.reply_text(text)
+
+# PHOTO BROADCAST
+async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not admin_only(update.effective_user.id):
+        return
+
+    if not update.message.photo:
+        return
+
+    photo = update.message.photo[-1].file_id
+
+    caption = update.message.caption or ""
+
+    keyboard = None
+
+    if broadcast_data["button_text"]:
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(
+                    broadcast_data["button_text"],
+                    url=broadcast_data["button_url"]
+                )
+            ]
+        ])
+
+    success = 0
+
+    for channel_id in channels:
+
+        try:
+
+            msg = await context.bot.send_photo(
+                chat_id=channel_id,
+                photo=photo,
+                caption=caption,
+                reply_markup=keyboard
+            )
+
+            last_messages[channel_id] = msg.message_id
+
+            success += 1
+
+        except Exception as e:
+            print(e)
+
+    await update.message.reply_text(
+        f"✅ Photo Sent to {success} chats"
+    )
 
 # APP
-app = (
-    ApplicationBuilder()
-    .token(TOKEN)
-    .post_init(post_init)
-    .build()
-)
+app = ApplicationBuilder().token(TOKEN).build()
 
-# HANDLERS
+# COMMANDS
 app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("setmessage", setmessage))
-app.add_handler(CommandHandler("setlink", setlink))
-app.add_handler(CommandHandler("startpost", startpost))
-app.add_handler(CommandHandler("stoppost", stoppost))
+app.add_handler(CommandHandler("broadcast", broadcast))
+app.add_handler(CommandHandler("button", button))
+app.add_handler(CommandHandler("deletebroadcast", deletebroadcast))
+app.add_handler(CommandHandler("channels", listchannels))
+app.add_handler(CommandHandler("subs", subs))
+app.add_handler(CommandHandler("stats", stats_cmd))
 
-print("Bot Running...")
+# AUTO DETECT CHANNELS
+app.add_handler(MessageHandler(filters.ALL, detect_channels))
+
+# PHOTO HANDLER
+app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
+
+print("🚀 Bot Running...")
 
 app.run_polling()
