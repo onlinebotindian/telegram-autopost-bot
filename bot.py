@@ -2,13 +2,13 @@ import asyncio
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
+
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
 )
-import asyncio
 import os
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -27,23 +27,18 @@ Commands:
 /startpost
 /stoppost
 """
+
     await update.message.reply_text(text)
 
 # SET MESSAGE
 async def setmessage(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     chat_id = update.effective_chat.id
 
-if str(chat_id).startswith("-100"):
-    pass
-else:
-    await update.message.reply_text(
-        "❌ Use this command inside group/channel"
-    )
-    return
     message = " ".join(context.args)
 
     if not message:
-        await update.message.reply_text("❌ Send a message")
+        await update.message.reply_text("❌ Send message")
         return
 
     if chat_id not in bot_data:
@@ -55,11 +50,13 @@ else:
 
 # SET LINK
 async def setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     chat_id = update.effective_chat.id
+
     link = " ".join(context.args)
 
     if not link:
-        await update.message.reply_text("❌ Send a link")
+        await update.message.reply_text("❌ Send link")
         return
 
     if chat_id not in bot_data:
@@ -71,6 +68,7 @@ async def setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # START POST
 async def startpost(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     chat_id = update.effective_chat.id
 
     if chat_id not in bot_data:
@@ -82,6 +80,7 @@ async def startpost(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # STOP POST
 async def stoppost(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     chat_id = update.effective_chat.id
 
     if chat_id in bot_data:
@@ -91,6 +90,7 @@ async def stoppost(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # AUTO POST LOOP
 async def autopost(application):
+
     while True:
 
         for chat_id, data in bot_data.items():
@@ -113,12 +113,19 @@ async def autopost(application):
 
         await asyncio.sleep(60)
 
-# MAIN
+# POST INIT
 async def post_init(application):
     asyncio.create_task(autopost(application))
 
-app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
+# APP
+app = (
+    ApplicationBuilder()
+    .token(TOKEN)
+    .post_init(post_init)
+    .build()
+)
 
+# HANDLERS
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("setmessage", setmessage))
 app.add_handler(CommandHandler("setlink", setlink))
