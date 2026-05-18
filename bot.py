@@ -32,6 +32,14 @@ Commands:
 # SET MESSAGE
 async def setmessage(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+
+if str(chat_id).startswith("-100"):
+    pass
+else:
+    await update.message.reply_text(
+        "❌ Use this command inside group/channel"
+    )
+    return
     message = " ".join(context.args)
 
     if not message:
