@@ -43,8 +43,19 @@ waiting_forward = set()
 
 #---------------- LOAD CHANNELS ----------------
 
+# Load channels
 try:
-with open(CHANNELS_FILE, "r") as f:
+    with open(CHANNELS_FILE, "r") as f:
+        channels = json.load(f)
+except:
+    channels = []
+
+# Load broadcast messages
+try:
+    with open(MESSAGES_FILE, "r") as f:
+        sent_messages = json.load(f)
+except:
+    sent_messages = {}
 channels = json.load(f)
 except:
 channels = []
