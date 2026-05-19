@@ -36,14 +36,17 @@ def run_web():
 # ================= LOAD CHANNELS =================
 
 if os.path.exists(CHANNELS_FILE):
+
     with open(CHANNELS_FILE, "r") as f:
         channels = json.load(f)
+
 else:
     channels = []
 
 # ================= SAVE =================
 
 def save_channels():
+
     with open(CHANNELS_FILE, "w") as f:
         json.dump(channels, f)
 
@@ -63,7 +66,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/forward - Forward message\n"
         "/channels - Show connected channels\n"
         "/analytics - Bot analytics\n"
-        "/delete - Delete last post"
+        "/delete - Delete last broadcast"
     )
 
     await update.message.reply_text(text)
@@ -72,12 +75,37 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def analytics(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    text = (
-        f"📊 Bot Analytics\n\n"
-        f"📂 Connected Channels: {len(channels)}\n"
-        f"📢 Broadcast System: Active\n"
-        f"📩 Forward System: Active"
-    )
+    text = "📊 Bot Analytics\n\n"
+
+    if not channels:
+
+        text += "❌ No channels connected."
+
+    else:
+
+        total_subscribers = 0
+
+        for ch in channels:
+
+            try:
+
+                chat = await context.bot.get_chat(ch)
+
+                members = await context.bot.get_chat_member_count(ch)
+
+                total_subscribers += members
+
+                text += (
+                    f"📂 {chat.title}\n"
+                    f"👥 Subscribers: {members}\n"
+                    f"🆔 {ch}\n\n"
+                )
+
+            except:
+
+                text += f"❌ Failed To Fetch {ch}\n\n"
+
+        text += f"👥 Total Subscribers: {total_subscribers}"
 
     await update.message.reply_text(text)
 
@@ -86,9 +114,11 @@ async def analytics(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not channels:
+
         text = "❌ No channels connected."
 
     else:
+
         text = "📂 Connected Channels:\n\n"
 
         for ch in channels:
@@ -120,14 +150,25 @@ async def forward_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    sent_messages = context.user_data.get("sent_messages", [])
+
+    if not sent_messages:
+
+        await update.message.reply_text(
+            "❌ No broadcast found."
+        )
+
+        return
+
     deleted = 0
 
-    for ch in channels:
+    for msg in sent_messages:
 
         try:
+
             await context.bot.delete_message(
-                chat_id=ch,
-                message_id=context.user_data.get("last_msg")
+                chat_id=msg["chat_id"],
+                message_id=msg["message_id"]
             )
 
             deleted += 1
@@ -154,25 +195,51 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success = 0
         failed = 0
 
-        last_message_id = None
+        total = len(channels)
 
-        for ch in channels:
+        progress = await update.message.reply_text(
+            "📢 Broadcasting Started..."
+        )
+
+        sent_messages = []
+
+        for index, ch in enumerate(channels, start=1):
 
             try:
+
                 msg = await context.bot.send_message(
                     chat_id=ch,
                     text=update.message.text
                 )
 
-                last_message_id = msg.message_id
+                sent_messages.append({
+                    "chat_id": ch,
+                    "message_id": msg.message_id
+                })
+
                 success += 1
 
             except:
+
                 failed += 1
 
-        context.user_data["last_msg"] = last_message_id
+            percent = int((index / total) * 100)
 
-        await update.message.reply_text(
+            try:
+
+                await progress.edit_text(
+                    f"📢 Broadcasting...\n\n"
+                    f"📊 Progress: {percent}%\n"
+                    f"✔ Success: {success}\n"
+                    f"❌ Failed: {failed}"
+                )
+
+            except:
+                pass
+
+        context.user_data["sent_messages"] = sent_messages
+
+        await progress.edit_text(
             f"✅ Broadcast Completed\n\n"
             f"✔ Success: {success}\n"
             f"❌ Failed: {failed}"
@@ -189,24 +256,50 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success = 0
         failed = 0
 
-        last_message_id = None
+        total = len(channels)
 
-        for ch in channels:
+        progress = await update.message.reply_text(
+            "📩 Forward Started..."
+        )
+
+        sent_messages = []
+
+        for index, ch in enumerate(channels, start=1):
 
             try:
+
                 msg = await update.message.forward(
                     chat_id=ch
                 )
 
-                last_message_id = msg.message_id
+                sent_messages.append({
+                    "chat_id": ch,
+                    "message_id": msg.message_id
+                })
+
                 success += 1
 
             except:
+
                 failed += 1
 
-        context.user_data["last_msg"] = last_message_id
+            percent = int((index / total) * 100)
 
-        await update.message.reply_text(
+            try:
+
+                await progress.edit_text(
+                    f"📩 Forwarding...\n\n"
+                    f"📊 Progress: {percent}%\n"
+                    f"✔ Success: {success}\n"
+                    f"❌ Failed: {failed}"
+                )
+
+            except:
+                pass
+
+        context.user_data["sent_messages"] = sent_messages
+
+        await progress.edit_text(
             f"✅ Forward Completed\n\n"
             f"✔ Success: {success}\n"
             f"❌ Failed: {failed}"
@@ -229,6 +322,7 @@ async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_channels()
 
             try:
+
                 await context.bot.send_message(
                     chat_id=update.effective_user.id,
                     text=(
@@ -256,7 +350,7 @@ async def error_handler(update, context):
 
 if __name__ == "__main__":
 
-    # START WEB
+    # START FLASK
     flask_thread = threading.Thread(target=run_web)
     flask_thread.daemon = True
     flask_thread.start()
@@ -295,7 +389,7 @@ if __name__ == "__main__":
         CommandHandler("delete", delete_command)
     )
 
-    # BOT ADDED TO CHANNEL
+    # BOT ADDED
     telegram_app.add_handler(
         ChatMemberHandler(
             bot_added,
