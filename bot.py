@@ -34,8 +34,7 @@ from telegram.ext import (
 )
 
 # YOUR ADMIN ID
-ADMIN_ID = 7638053663
-
+ADMINS = [7638053663,2116668482]
 # BOT TOKEN
 TOKEN = os.getenv("BOT_TOKEN")
 
