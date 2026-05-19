@@ -1,83 +1,88 @@
-import os
 import json
+import os
 import asyncio
 import threading
-
 from flask import Flask
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
-    ChatMemberHandler,
     ContextTypes,
-    filters
+    filters,
+    ChatMemberHandler,
 )
 
-# ================= TOKEN =================
+# ================= BOT TOKEN =================
 
 BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
-
-# ================= ADMINS =================
-
-ADMINS = [2116668482]
 
 # ================= FILES =================
 
 CHANNELS_FILE = "channels.json"
 
+# ================= FLASK =================
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot Running!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
 # ================= LOAD CHANNELS =================
 
-try:
+if os.path.exists(CHANNELS_FILE):
     with open(CHANNELS_FILE, "r") as f:
         channels = json.load(f)
-except:
+else:
     channels = []
 
-# ================= SAVE =================
+# ================= SAVE CHANNELS =================
 
 def save_channels():
     with open(CHANNELS_FILE, "w") as f:
         json.dump(channels, f)
 
-# ================= FLASK =================
+# ================= STATES =================
 
-web_app = Flask(__name__)
-
-@web_app.route("/")
-def home():
-    return "Bot Running"
-
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    web_app.run(host="0.0.0.0", port=port)
+waiting_broadcast = set()
+waiting_forward = set()
 
 # ================= START =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    buttons = [
+    keyboard = [
         [
-            InlineKeyboardButton("📢 Broadcast", callback_data="broadcast")
+            InlineKeyboardButton("📢 Broadcast", callback_data="broadcast"),
+            InlineKeyboardButton("📩 Forward", callback_data="forward"),
         ],
         [
-            InlineKeyboardButton("📨 Forward", callback_data="forward")
+            InlineKeyboardButton("📂 Channels", callback_data="channels"),
+            InlineKeyboardButton("🗑 Delete Last", callback_data="delete"),
         ],
-        [
-            InlineKeyboardButton("📊 Channels", callback_data="channels")
-        ]
     ]
 
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    text = (
+        "✅ Bot Active\n\n"
+        "Add bot as admin in channels.\n"
+        "Then use buttons below."
+    )
+
     await update.message.reply_text(
-        f"""
-🚀 Broadcast Bot Online
-
-📢 Connected Channels: {len(channels)}
-
-Select Option Below
-""",
-        reply_markup=InlineKeyboardMarkup(buttons)
+        text,
+        reply_markup=reply_markup
     )
 
 # ================= BUTTONS =================
@@ -89,171 +94,173 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = query.from_user.id
 
-    if user_id not in ADMINS:
-        return
-
     if query.data == "broadcast":
-
-        context.user_data["mode"] = "broadcast"
-
+        waiting_broadcast.add(user_id)
         await query.message.reply_text(
             "📢 Send message to broadcast."
         )
 
     elif query.data == "forward":
-
-        context.user_data["mode"] = "forward"
-
+        waiting_forward.add(user_id)
         await query.message.reply_text(
-            "📨 Forward any post now."
+            "📩 Forward any message now."
         )
 
     elif query.data == "channels":
 
-        if len(channels) == 0:
-
-            txt = "❌ No Channels Connected"
-
+        if not channels:
+            text = "❌ No channels connected."
         else:
-
-            txt = "📢 Connected Channels\n\n"
-
+            text = "📂 Connected Channels:\n\n"
             for ch in channels:
-                txt += f"• {ch['title']}\n"
+                text += f"{ch}\n"
 
-        await query.message.reply_text(txt)
+        await query.message.reply_text(text)
 
-# ================= AUTO CONNECT =================
+    elif query.data == "delete":
 
-async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        deleted = 0
 
-    chat = update.effective_chat
-
-    if chat.type != "channel":
-        return
-
-    already = False
-
-    for ch in channels:
-        if ch["id"] == chat.id:
-            already = True
-
-    if not already:
-
-        channels.append({
-            "id": chat.id,
-            "title": chat.title
-        })
-
-        save_channels()
-
-        for admin in ADMINS:
-
+        for ch in channels:
             try:
-
-                await context.bot.send_message(
-                    admin,
-                    f"""
-✅ New Channel Connected
-
-📢 {chat.title}
-🆔 {chat.id}
-"""
+                await context.bot.delete_message(
+                    chat_id=ch,
+                    message_id=context.user_data.get("last_msg")
                 )
-
+                deleted += 1
             except:
                 pass
 
-# ================= MESSAGE HANDLER =================
+        await query.message.reply_text(
+            f"🗑 Deleted from {deleted} channels."
+        )
+
+# ================= HANDLE MESSAGES =================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
 
-    if user_id not in ADMINS:
-        return
+    # ===== BROADCAST =====
 
-    mode = context.user_data.get("mode")
+    if user_id in waiting_broadcast:
 
-    if not mode:
-        return
+        waiting_broadcast.remove(user_id)
 
-    success = 0
-    failed = 0
+        success = 0
+        failed = 0
 
-    msg = await update.message.reply_text(
-        "🚀 Broadcasting..."
-    )
-
-    # ================= TEXT =================
-
-    if mode == "broadcast":
+        sent_message_id = None
 
         for ch in channels:
 
             try:
-
-                await context.bot.send_message(
-                    chat_id=ch["id"],
+                msg = await context.bot.send_message(
+                    chat_id=ch,
                     text=update.message.text
                 )
 
+                sent_message_id = msg.message_id
                 success += 1
 
-            except Exception as e:
-
-                print(e)
+            except:
                 failed += 1
 
-    # ================= FORWARD =================
+        context.user_data["last_msg"] = sent_message_id
 
-    elif mode == "forward":
+        await update.message.reply_text(
+            f"✅ Broadcast Completed\n\n"
+            f"✔ Success: {success}\n"
+            f"❌ Failed: {failed}"
+        )
+
+        return
+
+    # ===== FORWARD =====
+
+    if user_id in waiting_forward:
+
+        waiting_forward.remove(user_id)
+
+        success = 0
+        failed = 0
+
+        sent_message_id = None
 
         for ch in channels:
 
             try:
-
-                await context.bot.forward_message(
-                    chat_id=ch["id"],
-                    from_chat_id=update.message.chat_id,
-                    message_id=update.message.message_id
+                msg = await update.message.forward(
+                    chat_id=ch
                 )
 
+                sent_message_id = msg.message_id
                 success += 1
 
-            except Exception as e:
-
-                print(e)
+            except:
                 failed += 1
 
-    await msg.edit_text(
-        f"""
-✅ Broadcast Completed
+        context.user_data["last_msg"] = sent_message_id
 
-✔ Success: {success}
-❌ Failed: {failed}
-"""
-    )
+        await update.message.reply_text(
+            f"✅ Forward Completed\n\n"
+            f"✔ Success: {success}\n"
+            f"❌ Failed: {failed}"
+        )
 
-    context.user_data["mode"] = None
+        return
 
-# ================= ERROR =================
+# ================= BOT ADDED TO CHANNEL =================
+
+async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    chat = update.effective_chat
+
+    if chat.type == "channel":
+
+        if chat.id not in channels:
+            channels.append(chat.id)
+            save_channels()
+
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_user.id,
+                    text=(
+                        f"✅ New Channel Connected\n\n"
+                        f"{chat.title}\n"
+                        f"ID: {chat.id}"
+                    )
+                )
+            except:
+                pass
+
+# ================= ERROR HANDLER =================
 
 async def error_handler(update, context):
 
     error_text = str(context.error)
 
-    print(error_text)
-
     if "Conflict" in error_text:
         return
+
+    print(error_text)
 
 # ================= MAIN =================
 
 if __name__ == "__main__":
 
-    threading.Thread(target=run_web).start()
+    # START FLASK
+    flask_thread = threading.Thread(target=run_web)
+    flask_thread.daemon = True
+    flask_thread.start()
 
+    print("🌐 Flask Started")
+
+    # EVENT LOOP
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # TELEGRAM APP
     telegram_app = Application.builder().token(BOT_TOKEN).build()
 
     telegram_app.add_handler(
@@ -280,10 +287,7 @@ if __name__ == "__main__":
 
     telegram_app.add_error_handler(error_handler)
 
-    print("🚀 Bot Running...")
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    print("🚀 Telegram Bot Running")
 
     telegram_app.run_polling(
         drop_pending_updates=True,
