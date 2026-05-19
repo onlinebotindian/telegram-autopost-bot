@@ -1,378 +1,341 @@
+from flask import Flask
+from threading import Thread
+import asyncio
 import json
 import os
-import threading
-from flask import Flask
-from telegram import Update, ReplyKeyboardRemove
+from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
-    MessageHandler,
     ContextTypes,
+    MessageHandler,
     filters,
 )
 
-# ================= CONFIG =================
-
+# ---------------- BOT TOKEN ----------------
 BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
+OWNER_ID = 7638053663 # replace with your telegram id
 
+# ---------------- FILES ----------------
+USERS_FILE = "users.json"
 CHANNELS_FILE = "channels.json"
+LAST_BROADCAST_FILE = "last_broadcast.json"
 
-# ================= FLASK =================
+# ---------------- LOAD DATA ----------------
+def load_data(file_name):
+    if os.path.exists(file_name):
+        try:
+            with open(file_name, "r") as f:
+                return json.load(f)
+        except:
+            return []
+    return []
 
+def save_data(file_name, data):
+    with open(file_name, "w") as f:
+        json.dump(data, f)
+
+users = load_data(USERS_FILE)
+channels = load_data(CHANNELS_FILE)
+
+# ---------------- FLASK KEEP ALIVE ----------------
 app = Flask(__name__)
 
-@app.route("/")
+@app.route('/')
 def home():
-    return "Bot Running Successfully!"
+    return "Bot Running"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# ================= LOAD CHANNELS =================
-
-if os.path.exists(CHANNELS_FILE):
-
-    with open(CHANNELS_FILE, "r") as f:
-        channels = json.load(f)
-
-else:
-    channels = []
-
-# ================= SAVE =================
-
-def save_channels():
-
-    with open(CHANNELS_FILE, "w") as f:
-        json.dump(channels, f)
-
-# ================= STATES =================
-
-waiting_broadcast = set()
-waiting_forward = set()
-
-last_posts = {}
-
-# ================= START =================
-
+# ---------------- START ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
 
-    text = (
-        "✅ Bot Active\n\n"
-        "Commands:\n\n"
-        "/broadcast - Broadcast message\n"
-        "/forward - Forward message\n"
-        "/channels - Connected channels\n"
-        "/analytics - Analytics\n"
-        "/delete - Delete last broadcast"
-    )
+    if user_id not in users:
+        users.append(user_id)
+        save_data(USERS_FILE, users)
 
-    await update.message.reply_text(
-        text,
-        reply_markup=ReplyKeyboardRemove()
-    )
+    text = """
+🤖 Auto Post Bot Active
 
-# ================= CHANNEL DETECT =================
-
-async def detect_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    chat = update.effective_chat
-
-    if chat.type == "channel":
-
-        if chat.id not in channels:
-
-            channels.append(chat.id)
-
-            save_channels()
-
-            print(f"Connected Channel: {chat.title}")
-
-# ================= CHANNELS =================
-
-async def show_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not channels:
-
-        await update.message.reply_text(
-            "❌ No channels connected."
-        )
-
-        return
-
-    text = "📂 Connected Channels\n\n"
-
-    for ch in channels:
-
-        try:
-
-            chat = await context.bot.get_chat(ch)
-
-            text += (
-                f"📢 {chat.title}\n"
-                f"🆔 {ch}\n\n"
-            )
-
-        except:
-            pass
+Commands:
+/broadcast
+/forward
+/analytics
+/deletebroadcast
+/addchannel
+/removechannel
+/channels
+"""
 
     await update.message.reply_text(text)
 
-# ================= ANALYTICS =================
+# ---------------- ADD CHANNEL ----------------
+async def addchannel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
 
+    try:
+        channel_id = context.args[0]
+
+        if channel_id not in channels:
+            channels.append(channel_id)
+            save_data(CHANNELS_FILE, channels)
+
+        await update.message.reply_text(f"✅ Added Channel:\n{channel_id}")
+
+    except:
+        await update.message.reply_text(
+            "Usage:\n/addchannel -100xxxxxxxxxx"
+        )
+
+# ---------------- REMOVE CHANNEL ----------------
+async def removechannel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+
+    try:
+        channel_id = context.args[0]
+
+        if channel_id in channels:
+            channels.remove(channel_id)
+            save_data(CHANNELS_FILE, channels)
+
+        await update.message.reply_text(f"❌ Removed:\n{channel_id}")
+
+    except:
+        await update.message.reply_text(
+            "Usage:\n/removechannel -100xxxxxxxxxx"
+        )
+
+# ---------------- CHANNEL LIST ----------------
+async def channels_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+
+    if not channels:
+        await update.message.reply_text("No channels added")
+        return
+
+    msg = "📢 Channels:\n\n"
+
+    for ch in channels:
+        try:
+            chat = await context.bot.get_chat(ch)
+            members = await context.bot.get_chat_member_count(ch)
+
+            msg += f"• {chat.title}\n"
+            msg += f"ID: {ch}\n"
+            msg += f"Subscribers: {members}\n\n"
+
+        except:
+            msg += f"• {ch}\n\n"
+
+    await update.message.reply_text(msg)
+
+# ---------------- ANALYTICS ----------------
 async def analytics(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not channels:
-
-        await update.message.reply_text(
-            "❌ No channels connected."
-        )
-
+    if update.effective_user.id != OWNER_ID:
         return
 
-    text = "📊 Analytics\n\n"
+    total_users = len(users)
+    total_channels = len(channels)
 
-    total_subscribers = 0
+    text = f"""
+📊 BOT ANALYTICS
+
+👤 Users: {total_users}
+📢 Channels: {total_channels}
+
+"""
 
     for ch in channels:
-
         try:
-
             chat = await context.bot.get_chat(ch)
+            members = await context.bot.get_chat_member_count(ch)
 
-            try:
-                members = await context.bot.get_chat_member_count(ch)
-            except:
-                members = "Hidden"
+            text += f"""
+📌 {chat.title}
+👥 Subscribers: {members}
 
-            if isinstance(members, int):
-                total_subscribers += members
-
-            text += (
-                f"📢 {chat.title}\n"
-                f"👥 Subscribers: {members}\n"
-                f"🆔 {ch}\n\n"
-            )
+"""
 
         except:
-            pass
-
-    text += f"👥 Total Subscribers: {total_subscribers}"
+            text += f"{ch}\n"
 
     await update.message.reply_text(text)
 
-# ================= BROADCAST COMMAND =================
+# ---------------- BROADCAST ----------------
+broadcast_mode = {}
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
 
-    waiting_broadcast.add(update.effective_user.id)
+    broadcast_mode[update.effective_user.id] = "broadcast"
 
     await update.message.reply_text(
-        "📢 Send message to broadcast."
+        "📨 Send message to broadcast"
     )
 
-# ================= FORWARD COMMAND =================
-
+# ---------------- FORWARD ----------------
 async def forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
 
-    waiting_forward.add(update.effective_user.id)
+    broadcast_mode[update.effective_user.id] = "forward"
 
     await update.message.reply_text(
-        "📩 Forward any message now."
+        "➡️ Forward a message"
     )
 
-# ================= DELETE =================
+# ---------------- DELETE LAST BROADCAST ----------------
+async def deletebroadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
 
-async def delete_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not os.path.exists(LAST_BROADCAST_FILE):
+        await update.message.reply_text("No broadcast data found")
+        return
+
+    with open(LAST_BROADCAST_FILE, "r") as f:
+        data = json.load(f)
 
     deleted = 0
 
-    for ch, msg_id in last_posts.items():
-
+    for item in data:
         try:
-
             await context.bot.delete_message(
-                chat_id=ch,
-                message_id=msg_id
+                chat_id=item["chat_id"],
+                message_id=item["message_id"]
             )
-
             deleted += 1
-
         except:
             pass
 
     await update.message.reply_text(
-        f"🗑 Deleted from {deleted} channels."
+        f"🗑 Deleted from {deleted} channels"
     )
 
-# ================= HANDLE MESSAGE =================
-
+# ---------------- HANDLE MESSAGES ----------------
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     user_id = update.effective_user.id
 
-    # ===== BROADCAST =====
+    if user_id != OWNER_ID:
+        return
 
-    if user_id in waiting_broadcast:
+    if user_id not in broadcast_mode:
+        return
 
-        waiting_broadcast.remove(user_id)
+    mode = broadcast_mode[user_id]
 
-        sent = 0
-        failed = 0
+    progress = await update.message.reply_text(
+        "⏳ Starting..."
+    )
 
-        total = len(channels)
+    success = 0
+    failed = 0
 
-        progress = await update.message.reply_text(
-            "📢 Broadcasting Started..."
-        )
+    saved_messages = []
 
-        for index, ch in enumerate(channels, start=1):
+    total = len(channels)
+    current = 0
 
-            try:
+    for ch in channels:
+        current += 1
 
-                msg = await context.bot.send_message(
+        try:
+            if mode == "broadcast":
+                sent = await context.bot.send_message(
                     chat_id=ch,
                     text=update.message.text
                 )
 
-                last_posts[ch] = msg.message_id
-
-                sent += 1
-
-            except:
-
-                failed += 1
-
-            percent = int((index / total) * 100) if total > 0 else 0
-
-            try:
-
-                await progress.edit_text(
-                    f"📢 Broadcasting...\n\n"
-                    f"📊 Progress: {percent}%\n"
-                    f"✅ Sent: {sent}\n"
-                    f"❌ Failed: {failed}"
-                )
-
-            except:
-                pass
-
-        await progress.edit_text(
-            f"✅ Broadcast Completed\n\n"
-            f"✅ Success: {sent}\n"
-            f"❌ Failed: {failed}"
-        )
-
-        return
-
-    # ===== FORWARD =====
-
-    if user_id in waiting_forward:
-
-        waiting_forward.remove(user_id)
-
-        sent = 0
-        failed = 0
-
-        total = len(channels)
-
-        progress = await update.message.reply_text(
-            "📩 Forward Started..."
-        )
-
-        for index, ch in enumerate(channels, start=1):
-
-            try:
-
-                msg = await context.bot.forward_message(
+            else:
+                sent = await context.bot.forward_message(
                     chat_id=ch,
                     from_chat_id=update.message.chat_id,
                     message_id=update.message.message_id
                 )
 
-                last_posts[ch] = msg.message_id
+            saved_messages.append({
+                "chat_id": ch,
+                "message_id": sent.message_id
+            })
 
-                sent += 1
+            success += 1
 
-            except:
+        except:
+            failed += 1
 
-                failed += 1
+        percent = int((current / total) * 100)
 
-            percent = int((index / total) * 100) if total > 0 else 0
+        bar = "█" * int(percent / 10)
+        empty = "░" * (10 - int(percent / 10))
 
-            try:
+        try:
+            await progress.edit_text(
+                f"""
+📡 Broadcasting...
 
-                await progress.edit_text(
-                    f"📩 Forwarding...\n\n"
-                    f"📊 Progress: {percent}%\n"
-                    f"✅ Sent: {sent}\n"
-                    f"❌ Failed: {failed}"
-                )
+[{bar}{empty}] {percent}%
 
-            except:
-                pass
+✅ Success: {success}
+❌ Failed: {failed}
+"""
+            )
+        except:
+            pass
 
-        await progress.edit_text(
-            f"✅ Forward Completed\n\n"
-            f"✅ Success: {sent}\n"
-            f"❌ Failed: {failed}"
-        )
+    with open(LAST_BROADCAST_FILE, "w") as f:
+        json.dump(saved_messages, f)
 
-        return
+    del broadcast_mode[user_id]
 
-# ================= RUN =================
+    await progress.edit_text(
+        f"""
+✅ Broadcast Completed
 
+📢 Sent: {success}
+❌ Failed: {failed}
+"""
+    )
+
+# ---------------- MAIN ----------------
+telegram_app = Application.builder().token(BOT_TOKEN).build()
+
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(CommandHandler("broadcast", broadcast))
+telegram_app.add_handler(CommandHandler("forward", forward))
+telegram_app.add_handler(CommandHandler("analytics", analytics))
+telegram_app.add_handler(CommandHandler("addchannel", addchannel))
+telegram_app.add_handler(CommandHandler("removechannel", removechannel))
+telegram_app.add_handler(CommandHandler("channels", channels_list))
+telegram_app.add_handler(CommandHandler("deletebroadcast", deletebroadcast))
+
+telegram_app.add_handler(
+    MessageHandler(filters.ALL & ~filters.COMMAND, handle_message)
+)
+
+# ---------------- RUN ----------------
 if __name__ == "__main__":
+    Thread(target=run_web).start()
 
-    # Flask Thread
-    threading.Thread(target=run_web).start()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-    print("🌐 Flask Running")
+    async def main():
+        print("🚀 Telegram Bot Running")
 
-    # Telegram App
-    telegram_app = Application.builder().token(BOT_TOKEN).build()
-
-    telegram_app.add_handler(
-        CommandHandler("start", start)
-    )
-
-    telegram_app.add_handler(
-        CommandHandler("broadcast", broadcast)
-    )
-
-    telegram_app.add_handler(
-        CommandHandler("forward", forward)
-    )
-
-    telegram_app.add_handler(
-        CommandHandler("channels", show_channels)
-    )
-
-    telegram_app.add_handler(
-        CommandHandler("analytics", analytics)
-    )
-
-    telegram_app.add_handler(
-        CommandHandler("delete", delete_last)
-    )
-
-    telegram_app.add_handler(
-        MessageHandler(
-            filters.ChatType.CHANNEL,
-            detect_channel
+        await telegram_app.initialize()
+        await telegram_app.start()
+        await telegram_app.updater.start_polling(
+            drop_pending_updates=True
         )
-    )
 
-    telegram_app.add_handler(
-        MessageHandler(
-            ~filters.COMMAND,
-            handle_message
-        )
-    )
+        while True:
+            await asyncio.sleep(100)
 
-    print("🚀 Telegram Bot Running")
-
-    telegram_app.run_polling(
-        drop_pending_updates=True,
-        close_loop=False
-    )
+    loop.run_until_complete(main())
