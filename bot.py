@@ -33,8 +33,12 @@ from telegram.ext import (
     filters
 )
 
-# YOUR ADMIN ID
-ADMINS = [7638053663,2116668482]
+# ADMINS
+ADMINS = [
+    7638053663,
+    2116668482
+]
+
 # BOT TOKEN
 TOKEN = os.getenv("BOT_TOKEN")
 
@@ -58,9 +62,9 @@ stats = {
 
 # ADMIN CHECK
 def admin_only(user_id):
-    return user_id == ADMIN_ID
+    return user_id in ADMINS
 
-# START COMMAND
+# START
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
@@ -82,6 +86,8 @@ Commands:
 /stats
 
 /subs
+
+Send image directly to broadcast photo + caption.
 """
 
     await update.message.reply_text(text)
@@ -95,7 +101,7 @@ async def detect_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         channels.add(chat.id)
 
-# BOT ADDED NOTIFICATION
+# BOT ADDED EVENT
 async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
@@ -117,10 +123,12 @@ async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
 {chat.id}
 """
 
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=text
-        )
+        for admin in ADMINS:
+
+            await context.bot.send_message(
+                chat_id=admin,
+                text=text
+            )
 
     except Exception as e:
         print(e)
@@ -144,14 +152,13 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text, url = data.split("|")
 
     broadcast_data["button_text"] = text.strip()
-
     broadcast_data["button_url"] = url.strip()
 
     await update.message.reply_text(
         "✅ Button Saved"
     )
 
-# TEXT BROADCAST
+# BROADCAST MESSAGE
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
@@ -181,7 +188,6 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
 
     success = 0
-
     failed = 0
 
     for channel_id in channels:
@@ -197,7 +203,6 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             last_messages[channel_id] = msg.message_id
 
             success += 1
-
             stats["sent"] += 1
 
         except Exception as e:
@@ -205,7 +210,6 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(e)
 
             failed += 1
-
             stats["failed"] += 1
 
     await update.message.reply_text(
@@ -278,7 +282,6 @@ async def subs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     total = 0
-
     result = ""
 
     for channel_id in channels:
@@ -362,7 +365,7 @@ app.add_handler(CommandHandler("channels", channels_cmd))
 app.add_handler(CommandHandler("stats", stats_cmd))
 app.add_handler(CommandHandler("subs", subs))
 
-# AUTO DETECT
+# AUTO DETECT CHANNELS
 app.add_handler(MessageHandler(filters.ALL, detect_channels))
 
 # BOT ADDED EVENT
@@ -374,7 +377,12 @@ app.add_handler(
 )
 
 # PHOTO HANDLER
-app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
+app.add_handler(
+    MessageHandler(
+        filters.PHOTO,
+        photo_handler
+    )
+)
 
 print("🚀 Bot Running...")
 
