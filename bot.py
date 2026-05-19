@@ -317,6 +317,4 @@ telegram_app.add_handler(
 
 print("🚀 Bot Running...")
 
-asyncio.set_event_loop(asyncio.new_event_loop())
-
-telegram_app.run_polling(drop_pending_updates=True)
+telegram_app.run_polling()
