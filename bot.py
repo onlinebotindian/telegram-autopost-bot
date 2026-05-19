@@ -13,11 +13,11 @@ from telegram.ext import (
     ChatMemberHandler,
 )
 
-# ================= BOT TOKEN =================
+# ================= TOKEN =================
 
 BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
 
-# ================= FILE =================
+# ================= FILES =================
 
 CHANNELS_FILE = "channels.json"
 
@@ -41,7 +41,7 @@ if os.path.exists(CHANNELS_FILE):
 else:
     channels = []
 
-# ================= SAVE CHANNELS =================
+# ================= SAVE =================
 
 def save_channels():
     with open(CHANNELS_FILE, "w") as f:
@@ -58,10 +58,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = (
         "✅ Bot Active\n\n"
-        "Available Commands:\n\n"
+        "Commands:\n\n"
         "/broadcast - Broadcast message\n"
         "/forward - Forward message\n"
-        "/channels - Show channels\n"
+        "/channels - Show connected channels\n"
         "/analytics - Bot analytics\n"
         "/delete - Delete last post"
     )
@@ -74,7 +74,9 @@ async def analytics(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = (
         f"📊 Bot Analytics\n\n"
-        f"📂 Connected Channels: {len(channels)}"
+        f"📂 Connected Channels: {len(channels)}\n"
+        f"📢 Broadcast System: Active\n"
+        f"📩 Forward System: Active"
     )
 
     await update.message.reply_text(text)
@@ -85,6 +87,7 @@ async def show_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not channels:
         text = "❌ No channels connected."
+
     else:
         text = "📂 Connected Channels:\n\n"
 
@@ -191,7 +194,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for ch in channels:
 
             try:
-                msg = await update.message.forward(chat_id=ch)
+                msg = await update.message.forward(
+                    chat_id=ch
+                )
 
                 last_message_id = msg.message_id
                 success += 1
@@ -220,6 +225,7 @@ async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if chat.id not in channels:
 
             channels.append(chat.id)
+
             save_channels()
 
             try:
@@ -231,6 +237,7 @@ async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         f"ID: {chat.id}"
                     )
                 )
+
             except:
                 pass
 
@@ -288,7 +295,7 @@ if __name__ == "__main__":
         CommandHandler("delete", delete_command)
     )
 
-    # BOT ADDED
+    # BOT ADDED TO CHANNEL
     telegram_app.add_handler(
         ChatMemberHandler(
             bot_added,
@@ -304,6 +311,7 @@ if __name__ == "__main__":
         )
     )
 
+    # ERROR HANDLER
     telegram_app.add_error_handler(error_handler)
 
     print("🚀 Telegram Bot Running")
