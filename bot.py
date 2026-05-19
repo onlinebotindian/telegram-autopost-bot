@@ -432,6 +432,21 @@ if __name__ == "__main__":
 
     print("🚀 Telegram Bot Running")
 
-    telegram_app.run_polling(
-        drop_pending_updates=True
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    loop.run_until_complete(
+        telegram_app.initialize()
     )
+
+    loop.run_until_complete(
+        telegram_app.start()
+    )
+
+    loop.run_until_complete(
+        telegram_app.updater.start_polling(
+            drop_pending_updates=True
+        )
+    )
+
+    loop.run_forever()
