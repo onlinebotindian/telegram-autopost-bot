@@ -18,30 +18,30 @@ MessageHandler,
 filters,
 )
 
----------------- BOT TOKEN ----------------
+#---------------- BOT TOKEN ----------------
 
 TOKEN = "YOUR_BOT_TOKEN"
 
----------------- ADMINS ----------------
+#---------------- ADMINS ----------------
 
 ADMINS = [
 7638053663,
 2116668482
 ]
 
----------------- FILES ----------------
+#---------------- FILES ----------------
 
 CHANNELS_FILE = "channels.json"
 SCHEDULE_FILE = "schedule.json"
 
----------------- DATA ----------------
+#---------------- DATA ----------------
 
 broadcast_messages = []
 
 waiting_broadcast = set()
 waiting_forward = set()
 
----------------- LOAD CHANNELS ----------------
+#---------------- LOAD CHANNELS ----------------
 
 try:
 with open(CHANNELS_FILE, "r") as f:
@@ -49,7 +49,7 @@ channels = json.load(f)
 except:
 channels = []
 
----------------- LOAD SCHEDULE ----------------
+#---------------- LOAD SCHEDULE ----------------
 
 try:
 with open(SCHEDULE_FILE, "r") as f:
@@ -57,7 +57,7 @@ scheduled_posts = json.load(f)
 except:
 scheduled_posts = []
 
----------------- SAVE FUNCTIONS ----------------
+#---------------- SAVE FUNCTIONS ----------------
 
 def save_channels():
 with open(CHANNELS_FILE, "w") as f:
@@ -67,7 +67,7 @@ def save_schedule():
 with open(SCHEDULE_FILE, "w") as f:
 json.dump(scheduled_posts, f)
 
----------------- FLASK KEEPALIVE ----------------
+#---------------- FLASK KEEPALIVE ----------------
 
 web = Flask(name)
 
@@ -78,7 +78,7 @@ return "Bot Running Successfully"
 def run_web():
 web.run(host="0.0.0.0", port=10000)
 
----------------- KEYBOARD ----------------
+#---------------- KEYBOARD ----------------
 
 keyboard = ReplyKeyboardMarkup(
 [
@@ -89,7 +89,7 @@ keyboard = ReplyKeyboardMarkup(
 resize_keyboard=True
 )
 
----------------- START ----------------
+#---------------- START ----------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -108,7 +108,7 @@ Choose option below 👇
 reply_markup=keyboard
 )
 
----------------- AUTO CHANNEL DETECT ----------------
+#---------------- AUTO CHANNEL DETECT ----------------
 
 async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -143,7 +143,7 @@ try:
 except Exception as e:
     print(e)
 
----------------- ANALYTICS ----------------
+#---------------- ANALYTICS ----------------
 
 async def analytics(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -160,7 +160,7 @@ text = f"""
 
 await update.message.reply_text(text)
 
----------------- BUTTONS ----------------
+#---------------- BUTTONS ----------------
 
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -256,7 +256,7 @@ Use:
 """
 )
 
----------------- LIVE BROADCAST ----------------
+#---------------- LIVE BROADCAST ----------------
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -328,7 +328,7 @@ await progress.edit_text(
 """
 )
 
----------------- FORWARD ----------------
+#---------------- FORWARD ----------------
 
 async def forward_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -398,7 +398,7 @@ await progress.edit_text(
 """
 )
 
----------------- SCHEDULE COMMAND ----------------
+#---------------- SCHEDULE COMMAND ----------------
 
 async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -445,7 +445,7 @@ Use:
 """
 )
 
----------------- CHECK SCHEDULE ----------------
+#---------------- CHECK SCHEDULE ----------------
 
 async def check_schedule(app):
 
@@ -497,7 +497,7 @@ while True:
 
     await asyncio.sleep(60)
 
----------------- RESTART NOTIFY ----------------
+#---------------- RESTART NOTIFY ----------------
 
 async def notify_restart(app):
 
@@ -513,7 +513,7 @@ for admin in ADMINS:
     except:
         pass
 
----------------- MAIN ----------------
+#---------------- MAIN ----------------
 
 def main():
 
@@ -579,7 +579,7 @@ while True:
 
         print("♻️ Restarting...")
 
----------------- START ----------------
+#---------------- START ----------------
 
 threading.Thread(target=run_web).start()
 
