@@ -2,49 +2,44 @@ import os
 import json
 import asyncio
 import threading
-from datetime import datetime
 
 from flask import Flask
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup
-)
-
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
+    MessageHandler,
+    ChatMemberHandler,
     ContextTypes,
-    filters,
-    ChatMemberHandler
+    filters
 )
 
-# ================= CONFIG =================
+# ================= TOKEN =================
 
 BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
 
+# ================= ADMINS =================
+
 ADMINS = [2116668482]
 
+# ================= FILES =================
+
 CHANNELS_FILE = "channels.json"
-USERS_FILE = "users.json"
 
-# ================= LOAD DATA =================
+# ================= LOAD CHANNELS =================
 
-def load_data(filename):
-    try:
-        with open(filename, "r") as f:
-            return json.load(f)
-    except:
-        return []
+try:
+    with open(CHANNELS_FILE, "r") as f:
+        channels = json.load(f)
+except:
+    channels = []
 
-def save_data(filename, data):
-    with open(filename, "w") as f:
-        json.dump(data, f)
+# ================= SAVE =================
 
-channels = load_data(CHANNELS_FILE)
-users = load_data(USERS_FILE)
+def save_channels():
+    with open(CHANNELS_FILE, "w") as f:
+        json.dump(channels, f)
 
 # ================= FLASK =================
 
@@ -52,17 +47,17 @@ web_app = Flask(__name__)
 
 @web_app.route("/")
 def home():
-    return "Bot Running Successfully!"
+    return "Bot Running"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host="0.0.0.0", port=port)
 
-# ================= BUTTONS =================
+# ================= START =================
 
-def buttons():
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    keyboard = [
+    buttons = [
         [
             InlineKeyboardButton("📢 Broadcast", callback_data="broadcast")
         ],
@@ -70,42 +65,24 @@ def buttons():
             InlineKeyboardButton("📨 Forward", callback_data="forward")
         ],
         [
-            InlineKeyboardButton("📊 Analytics", callback_data="analytics")
-        ],
-        [
-            InlineKeyboardButton("📁 Channels", callback_data="channels")
+            InlineKeyboardButton("📊 Channels", callback_data="channels")
         ]
     ]
 
-    return InlineKeyboardMarkup(keyboard)
-
-# ================= START =================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    user_id = update.effective_user.id
-
-    if user_id not in users:
-        users.append(user_id)
-        save_data(USERS_FILE, users)
-
-    text = f"""
-🚀 Auto Broadcast Bot Online
-
-👥 Users: {len(users)}
-📢 Channels: {len(channels)}
-
-Choose option below:
-"""
-
     await update.message.reply_text(
-        text,
-        reply_markup=buttons()
+        f"""
+🚀 Broadcast Bot Online
+
+📢 Connected Channels: {len(channels)}
+
+Select Option Below
+""",
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-# ================= BUTTON HANDLER =================
+# ================= BUTTONS =================
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
     await query.answer()
@@ -115,75 +92,60 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in ADMINS:
         return
 
-    data = query.data
-
-    if data == "broadcast":
+    if query.data == "broadcast":
 
         context.user_data["mode"] = "broadcast"
 
         await query.message.reply_text(
-            "📢 Send text message now."
+            "📢 Send message to broadcast."
         )
 
-    elif data == "forward":
+    elif query.data == "forward":
 
         context.user_data["mode"] = "forward"
 
         await query.message.reply_text(
-            "📨 Forward any message now."
+            "📨 Forward any post now."
         )
 
-    elif data == "analytics":
-
-        text = f"""
-📊 BOT ANALYTICS
-
-👥 Users: {len(users)}
-📢 Channels: {len(channels)}
-🕒 Time: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}
-"""
-
-        await query.message.reply_text(text)
-
-    elif data == "channels":
+    elif query.data == "channels":
 
         if len(channels) == 0:
 
-            text = "❌ No connected channels."
+            txt = "❌ No Channels Connected"
 
         else:
 
-            text = "📢 Connected Channels:\n\n"
+            txt = "📢 Connected Channels\n\n"
 
             for ch in channels:
-                text += f"• {ch['title']} ({ch['id']})\n"
+                txt += f"• {ch['title']}\n"
 
-        await query.message.reply_text(text)
+        await query.message.reply_text(txt)
 
-# ================= AUTO CHANNEL DETECT =================
+# ================= AUTO CONNECT =================
 
 async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
 
-    if chat.type not in ["channel", "supergroup"]:
+    if chat.type != "channel":
         return
 
-    found = False
+    already = False
 
     for ch in channels:
         if ch["id"] == chat.id:
-            found = True
-            break
+            already = True
 
-    if not found:
+    if not already:
 
         channels.append({
             "id": chat.id,
             "title": chat.title
         })
 
-        save_data(CHANNELS_FILE, channels)
+        save_channels()
 
         for admin in ADMINS:
 
@@ -194,17 +156,17 @@ async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"""
 ✅ New Channel Connected
 
-📢 Name: {chat.title}
-🆔 ID: {chat.id}
+📢 {chat.title}
+🆔 {chat.id}
 """
                 )
 
             except:
                 pass
 
-# ================= BROADCAST =================
+# ================= MESSAGE HANDLER =================
 
-async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
 
@@ -219,11 +181,11 @@ async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     success = 0
     failed = 0
 
-    progress = await update.message.reply_text(
+    msg = await update.message.reply_text(
         "🚀 Broadcasting..."
     )
 
-    # ================= TEXT BROADCAST =================
+    # ================= TEXT =================
 
     if mode == "broadcast":
 
@@ -243,7 +205,7 @@ async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print(e)
                 failed += 1
 
-    # ================= FORWARD BROADCAST =================
+    # ================= FORWARD =================
 
     elif mode == "forward":
 
@@ -264,25 +226,27 @@ async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print(e)
                 failed += 1
 
-    # ================= DONE =================
-
-    await progress.edit_text(
+    await msg.edit_text(
         f"""
 ✅ Broadcast Completed
 
 ✔ Success: {success}
 ❌ Failed: {failed}
-📢 Total Channels: {len(channels)}
 """
     )
 
     context.user_data["mode"] = None
 
-# ================= ERROR HANDLER =================
+# ================= ERROR =================
 
 async def error_handler(update, context):
 
-    print(f"ERROR: {context.error}")
+    error_text = str(context.error)
+
+    print(error_text)
+
+    if "Conflict" in error_text:
+        return
 
 # ================= MAIN =================
 
@@ -297,7 +261,7 @@ if __name__ == "__main__":
     )
 
     telegram_app.add_handler(
-        CallbackQueryHandler(button_handler)
+        CallbackQueryHandler(buttons)
     )
 
     telegram_app.add_handler(
@@ -310,7 +274,7 @@ if __name__ == "__main__":
     telegram_app.add_handler(
         MessageHandler(
             filters.ALL & ~filters.COMMAND,
-            broadcast_message
+            handle_message
         )
     )
 
@@ -321,4 +285,7 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    telegram_app.run_polling()
+    telegram_app.run_polling(
+        drop_pending_updates=True,
+        close_loop=False
+    )
