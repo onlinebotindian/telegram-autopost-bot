@@ -10,6 +10,7 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    ChatMemberHandler,
     filters,
 )
 
@@ -70,17 +71,18 @@ Commands:
 /broadcast
 /forward
 /analytics
-/deletebroadcast
 /channels
+/deletebroadcast
 """
 
     await update.message.reply_text(text)
 
 # ================= AUTO DETECT CHANNEL =================
 
-async def auto_detect_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
+
         chat = update.effective_chat
 
         if not chat:
@@ -96,25 +98,21 @@ async def auto_detect_channel(update: Update, context: ContextTypes.DEFAULT_TYPE
             channels.append(channel_id)
             save_data(CHANNELS_FILE, channels)
 
-            try:
-                members = await context.bot.get_chat_member_count(channel_id)
+        members = await context.bot.get_chat_member_count(channel_id)
 
-                await context.bot.send_message(
-                    OWNER_ID,
-                    f"""
-✅ NEW CHANNEL DETECTED
+        await context.bot.send_message(
+            OWNER_ID,
+            f"""
+✅ CHANNEL DETECTED
 
 📢 {chat.title}
 🆔 {channel_id}
 👥 Subscribers: {members}
 """
-                )
+        )
 
-            except:
-                pass
-
-    except:
-        pass
+    except Exception as e:
+        print(e)
 
 # ================= CHANNELS =================
 
@@ -132,13 +130,14 @@ async def channels_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for ch in channels:
 
         try:
+
             chat = await context.bot.get_chat(ch)
             members = await context.bot.get_chat_member_count(ch)
 
             msg += f"""
 📌 {chat.title}
-🆔 {ch}
 👥 Subscribers: {members}
+🆔 {ch}
 
 """
 
@@ -170,6 +169,7 @@ async def analytics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for ch in channels:
 
         try:
+
             chat = await context.bot.get_chat(ch)
             members = await context.bot.get_chat_member_count(ch)
 
@@ -199,7 +199,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return
 
-    broadcast_mode[update.effective_user.id] = "broadcast"
+    broadcast_mode[user_id] = "broadcast"
 
     await update.message.reply_text(
         "📨 Send message to broadcast"
@@ -215,7 +215,7 @@ async def forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     broadcast_mode[update.effective_user.id] = "forward"
 
     await update.message.reply_text(
-        "➡️ Forward any message"
+        "➡️ Forward a message"
     )
 
 # ================= DELETE BROADCAST =================
@@ -237,6 +237,7 @@ async def deletebroadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for item in data:
 
         try:
+
             await context.bot.delete_message(
                 chat_id=item["chat_id"],
                 message_id=item["message_id"]
@@ -271,11 +272,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     total = len(channels)
 
-    sent_messages = []
-
     progress = await update.message.reply_text(
-        "🚀 Starting Broadcast..."
+        "🚀 Starting..."
     )
+
+    sent_messages = []
 
     for ch in channels:
 
@@ -336,9 +337,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bar = "█" * filled + "░" * (10 - filled)
 
         try:
+
             await progress.edit_text(
                 f"""
-📡 Broadcasting...
+📡 Broadcasting
 
 [{bar}] {percent}%
 
@@ -346,6 +348,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ❌ Failed: {failed}
 """
             )
+
         except:
             pass
 
@@ -379,7 +382,10 @@ telegram_app.add_handler(
 )
 
 telegram_app.add_handler(
-    MessageHandler(filters.ALL, auto_detect_channel)
+    ChatMemberHandler(
+        bot_added,
+        ChatMemberHandler.MY_CHAT_MEMBER
+    )
 )
 
 # ================= RUN =================
@@ -397,6 +403,7 @@ if __name__ == "__main__":
 
         await telegram_app.initialize()
         await telegram_app.start()
+
         await telegram_app.updater.start_polling(
             drop_pending_updates=True
         )
