@@ -15,8 +15,8 @@ from telegram.ext import (
 
 # ================= CONFIG =================
 
-BOT_TOKEN = "YOUR_BOT_TOKEN"
-OWNER_ID = 123456789
+BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
+OWNER_ID = 7638053663
 
 USERS_FILE = "users.json"
 CHANNELS_FILE = "channels.json"
