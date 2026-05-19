@@ -296,7 +296,7 @@ telegram_app.add_handler(CommandHandler("start", start))
 
 telegram_app.add_handler(
     MessageHandler(
-        filters.StatusUpdate.MY_CHAT_MEMBER,
+        filters.UpdateType.MY_CHAT_MEMBER,
         bot_added
     )
 )
