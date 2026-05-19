@@ -1,5 +1,27 @@
 from flask import Flask
 from threading import Thread
+import asyncio
+import os
+import json
+from datetime import datetime, timedelta
+
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup
+)
+
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    ChatMemberHandler,
+    filters
+)
+
+# ---------------- FLASK KEEP ALIVE ---------------- #
 
 app_web = Flask('')
 
@@ -12,96 +34,121 @@ def run():
 
 Thread(target=run).start()
 
-import asyncio
-import os
+# ---------------- ASYNC FIX ---------------- #
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup
-)
+# ---------------- ADMINS ---------------- #
 
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    ContextTypes,
-    MessageHandler,
-    ChatMemberHandler,
-    filters
-)
-
-# ADMINS
 ADMINS = [
     7638053663,
     2116668482
 ]
 
-# BOT TOKEN
+# ---------------- TOKEN ---------------- #
+
 TOKEN = os.getenv("BOT_TOKEN")
 
-# STORES CHANNELS
-channels = set()
+# ---------------- STORAGE ---------------- #
 
-# LAST BROADCAST IDS
-last_messages = {}
+CHANNELS_FILE = "channels.json"
+HISTORY_FILE = "history.json"
 
-# BUTTON DATA
-broadcast_data = {
-    "button_text": "",
-    "button_url": ""
-}
+try:
+    with open(CHANNELS_FILE, "r") as f:
+        channels = json.load(f)
+except:
+    channels = {}
 
-# STATS
+try:
+    with open(HISTORY_FILE, "r") as f:
+        broadcast_history = json.load(f)
+except:
+    broadcast_history = {}
+
+# ---------------- SAVE ---------------- #
+
+def save_channels():
+    with open(CHANNELS_FILE, "w") as f:
+        json.dump(channels, f)
+
+def save_history():
+    with open(HISTORY_FILE, "w") as f:
+        json.dump(broadcast_history, f)
+
+# ---------------- VARIABLES ---------------- #
+
 stats = {
     "sent": 0,
     "failed": 0
 }
 
-# ADMIN CHECK
+broadcast_data = {
+    "button_text": "",
+    "button_url": ""
+}
+
+last_forward = {}
+
+broadcast_number = 0
+
+# ---------------- ADMIN CHECK ---------------- #
+
 def admin_only(user_id):
     return user_id in ADMINS
 
-# START
+# ---------------- MENU ---------------- #
+
+menu_keyboard = ReplyKeyboardMarkup(
+    [
+        ["📤 Broadcast", "🔁 Forward"],
+        ["📊 Stats", "📢 Channels"],
+        ["🗑 Delete", "⏰ Schedule"]
+    ],
+    resize_keyboard=True
+)
+
+# ---------------- START ---------------- #
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
         return
 
     text = """
-🚀 PRIVATE BROADCAST BOT ACTIVE
+🚀 ADVANCED BROADCAST BOT
 
-Commands:
-
-/broadcast YOUR MESSAGE
-
-/button TEXT | URL
-
-/deletebroadcast
-
-/channels
-
-/stats
-
-/subs
-
-Send image directly to broadcast photo + caption.
+Features:
+✅ Forward Broadcast
+✅ Schedule Posts
+✅ Analytics
+✅ Auto Detect Channels
+✅ Delete Broadcast
+✅ Progress Bar
+✅ Channel Names
+✅ Error Logs
 """
 
-    await update.message.reply_text(text)
+    await update.message.reply_text(
+        text,
+        reply_markup=menu_keyboard
+    )
 
-# AUTO DETECT CHANNELS
+# ---------------- AUTO DETECT ---------------- #
+
 async def detect_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
 
     if chat.type in ["channel", "supergroup"]:
 
-        channels.add(chat.id)
+        channels[str(chat.id)] = chat.title
 
-# BOT ADDED EVENT
+        save_channels()
+
+# ---------------- BOT ADDED ---------------- #
+
 async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
@@ -109,31 +156,41 @@ async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type not in ["channel", "supergroup"]:
         return
 
-    channels.add(chat.id)
+    channels[str(chat.id)] = chat.title
+
+    save_channels()
 
     try:
 
-        text = f"""
-✅ Bot Added Successfully
+        count = await context.bot.get_chat_member_count(chat.id)
 
-📢 Channel:
-{chat.title}
+    except:
+        count = "Unknown"
 
-🆔 Chat ID:
-{chat.id}
+    text = f"""
+✅ Connected Successfully
+
+📢 {chat.title}
+
+🆔 {chat.id}
+
+👥 Members: {count}
 """
 
-        for admin in ADMINS:
+    for admin in ADMINS:
+
+        try:
 
             await context.bot.send_message(
                 chat_id=admin,
                 text=text
             )
 
-    except Exception as e:
-        print(e)
+        except:
+            pass
 
-# BUTTON COMMAND
+# ---------------- BUTTON ---------------- #
+
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
@@ -158,13 +215,16 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ Button Saved"
     )
 
-# BROADCAST MESSAGE
+# ---------------- BROADCAST ---------------- #
+
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    global broadcast_number
 
     if not admin_only(update.effective_user.id):
         return
 
-    text = " ".join(context.args)
+    text = update.message.text.replace("/broadcast", "").strip()
 
     if not text:
 
@@ -173,6 +233,10 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         return
+
+    progress = await update.message.reply_text(
+        "🚀 Broadcasting Started..."
+    )
 
     keyboard = None
 
@@ -187,49 +251,174 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         ])
 
-    success = 0
+    sent = 0
     failed = 0
 
-    for channel_id in channels:
+    broadcast_number += 1
+
+    broadcast_history[str(broadcast_number)] = {}
+
+    total = len(channels)
+
+    for i, channel_id in enumerate(channels):
 
         try:
 
             msg = await context.bot.send_message(
-                chat_id=channel_id,
+                chat_id=int(channel_id),
                 text=text,
                 reply_markup=keyboard
             )
 
-            last_messages[channel_id] = msg.message_id
+            broadcast_history[str(broadcast_number)][channel_id] = msg.message_id
 
-            success += 1
+            sent += 1
             stats["sent"] += 1
 
         except Exception as e:
 
-            print(e)
-
             failed += 1
             stats["failed"] += 1
 
-    await update.message.reply_text(
-        f"✅ Sent to {success} chats\n❌ Failed: {failed}"
+            for admin in ADMINS:
+
+                try:
+
+                    await context.bot.send_message(
+                        admin,
+                        f"❌ Failed in {channels[channel_id]}\n\n{e}"
+                    )
+
+                except:
+                    pass
+
+        if i % 5 == 0:
+
+            await progress.edit_text(
+                f"🚀 Broadcasting...\n\n{i+1}/{total}"
+            )
+
+    save_history()
+
+    await progress.edit_text(
+        f"✅ Broadcast Completed\n\nSent: {sent}\nFailed: {failed}"
     )
 
-# DELETE LAST BROADCAST
-async def deletebroadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ---------------- FORWARD BROADCAST ---------------- #
+
+async def save_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
         return
 
+    if update.message.forward_origin:
+
+        last_forward[update.effective_user.id] = update.message
+
+        await update.message.reply_text(
+            "✅ Forward Saved\n\nNow send /forwardbroadcast"
+        )
+
+# ---------------- FORWARD SEND ---------------- #
+
+async def forwardbroadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    global broadcast_number
+
+    if not admin_only(update.effective_user.id):
+        return
+
+    if update.effective_user.id not in last_forward:
+
+        await update.message.reply_text(
+            "❌ Forward a message first"
+        )
+
+        return
+
+    progress = await update.message.reply_text(
+        "🚀 Forward Broadcasting..."
+    )
+
+    message = last_forward[update.effective_user.id]
+
+    broadcast_number += 1
+
+    broadcast_history[str(broadcast_number)] = {}
+
+    total = len(channels)
+
+    for i, channel_id in enumerate(channels):
+
+        try:
+
+            msg = await context.bot.forward_message(
+                chat_id=int(channel_id),
+                from_chat_id=message.chat.id,
+                message_id=message.message_id
+            )
+
+            broadcast_history[str(broadcast_number)][channel_id] = msg.message_id
+
+        except Exception as e:
+
+            for admin in ADMINS:
+
+                try:
+
+                    await context.bot.send_message(
+                        admin,
+                        f"❌ Failed in {channels[channel_id]}\n\n{e}"
+                    )
+
+                except:
+                    pass
+
+        if i % 5 == 0:
+
+            await progress.edit_text(
+                f"🚀 Forwarding...\n\n{i+1}/{total}"
+            )
+
+    save_history()
+
+    await progress.edit_text(
+        "✅ Forward Broadcast Completed"
+    )
+
+# ---------------- DELETE ---------------- #
+
+async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not admin_only(update.effective_user.id):
+        return
+
+    if not context.args:
+
+        await update.message.reply_text(
+            "Use:\n/delete NUMBER"
+        )
+
+        return
+
+    num = context.args[0]
+
+    if num not in broadcast_history:
+
+        await update.message.reply_text(
+            "❌ Broadcast not found"
+        )
+
+        return
+
     deleted = 0
 
-    for channel_id, msg_id in last_messages.items():
+    for channel_id, msg_id in broadcast_history[num].items():
 
         try:
 
             await context.bot.delete_message(
-                chat_id=channel_id,
+                chat_id=int(channel_id),
                 message_id=msg_id
             )
 
@@ -242,133 +431,185 @@ async def deletebroadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🗑 Deleted from {deleted} chats"
     )
 
-# CHANNEL LIST
+# ---------------- DELETE ALL ---------------- #
+
+async def deleteall(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not admin_only(update.effective_user.id):
+        return
+
+    deleted = 0
+
+    for b in broadcast_history.values():
+
+        for channel_id, msg_id in b.items():
+
+            try:
+
+                await context.bot.delete_message(
+                    chat_id=int(channel_id),
+                    message_id=msg_id
+                )
+
+                deleted += 1
+
+            except:
+                pass
+
+    await update.message.reply_text(
+        f"🗑 Deleted {deleted} messages"
+    )
+
+# ---------------- CHANNELS ---------------- #
+
 async def channels_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
         return
 
-    text = "\n".join(
-        [str(x) for x in channels]
-    )
+    text = ""
+
+    for cid, name in channels.items():
+
+        text += f"📢 {name}\n🆔 {cid}\n\n"
 
     if not text:
         text = "No channels connected"
 
     await update.message.reply_text(text)
 
-# STATS
+# ---------------- STATS ---------------- #
+
 async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
         return
 
-    text = f"""
-📊 Analytics
+    total_subs = 0
 
-Connected Chats: {len(channels)}
-
-Sent Posts: {stats['sent']}
-
-Failed Posts: {stats['failed']}
-"""
-
-    await update.message.reply_text(text)
-
-# SUBSCRIBER COUNT
-async def subs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not admin_only(update.effective_user.id):
-        return
-
-    total = 0
-    result = ""
-
-    for channel_id in channels:
+    for cid in channels:
 
         try:
 
-            count = await context.bot.get_chat_member_count(
-                channel_id
-            )
+            count = await context.bot.get_chat_member_count(int(cid))
 
-            total += count
-
-            result += f"{channel_id} → {count}\n"
+            total_subs += count
 
         except:
             pass
 
-    result += f"\nTotal Subs: {total}"
+    text = f"""
+📊 Analytics
 
-    await update.message.reply_text(result)
+📢 Channels: {len(channels)}
 
-# PHOTO BROADCAST
-async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+👥 Total Subs: {total_subs}
+
+✅ Sent: {stats['sent']}
+
+❌ Failed: {stats['failed']}
+"""
+
+    await update.message.reply_text(text)
+
+# ---------------- SCHEDULE ---------------- #
+
+async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
         return
 
-    if not update.message.photo:
+    if len(context.args) < 2:
+
+        await update.message.reply_text(
+            "Use:\n/schedule MINUTES message"
+        )
+
         return
 
-    photo = update.message.photo[-1].file_id
+    minutes = int(context.args[0])
 
-    caption = update.message.caption or ""
+    text = " ".join(context.args[1:])
 
-    keyboard = None
+    await update.message.reply_text(
+        f"⏰ Scheduled in {minutes} mins"
+    )
 
-    if broadcast_data["button_text"]:
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    broadcast_data["button_text"],
-                    url=broadcast_data["button_url"]
-                )
-            ]
-        ])
-
-    success = 0
+    await asyncio.sleep(minutes * 60)
 
     for channel_id in channels:
 
         try:
 
-            msg = await context.bot.send_photo(
-                chat_id=channel_id,
-                photo=photo,
-                caption=caption,
-                reply_markup=keyboard
+            await context.bot.send_message(
+                int(channel_id),
+                text
             )
 
-            last_messages[channel_id] = msg.message_id
+        except:
+            pass
 
-            success += 1
+# ---------------- BUTTON MENU ---------------- #
 
-        except Exception as e:
-            print(e)
+async def button_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text(
-        f"✅ Photo Sent to {success} chats"
-    )
+    text = update.message.text
 
-# APP
+    if text == "📊 Stats":
+        await stats_cmd(update, context)
+
+    elif text == "📢 Channels":
+        await channels_cmd(update, context)
+
+    elif text == "🗑 Delete":
+
+        await update.message.reply_text(
+            "Use:\n/delete NUMBER"
+        )
+
+    elif text == "📤 Broadcast":
+
+        await update.message.reply_text(
+            "Use:\n/broadcast YOUR MESSAGE"
+        )
+
+    elif text == "🔁 Forward":
+
+        await update.message.reply_text(
+            "Forward a message then send:\n/forwardbroadcast"
+        )
+
+    elif text == "⏰ Schedule":
+
+        await update.message.reply_text(
+            "Use:\n/schedule MINUTES MESSAGE"
+        )
+
+# ---------------- APP ---------------- #
+
 app = ApplicationBuilder().token(TOKEN).build()
 
 # COMMANDS
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("broadcast", broadcast))
 app.add_handler(CommandHandler("button", button))
-app.add_handler(CommandHandler("deletebroadcast", deletebroadcast))
+app.add_handler(CommandHandler("forwardbroadcast", forwardbroadcast))
+app.add_handler(CommandHandler("delete", delete))
+app.add_handler(CommandHandler("deleteall", deleteall))
 app.add_handler(CommandHandler("channels", channels_cmd))
 app.add_handler(CommandHandler("stats", stats_cmd))
-app.add_handler(CommandHandler("subs", subs))
+app.add_handler(CommandHandler("schedule", schedule))
 
-# AUTO DETECT CHANNELS
+# AUTO DETECT
 app.add_handler(MessageHandler(filters.ALL, detect_channels))
 
-# BOT ADDED EVENT
+# BUTTON MENU
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_menu))
+
+# SAVE FORWARD
+app.add_handler(MessageHandler(filters.FORWARDED, save_forward))
+
+# BOT ADDED
 app.add_handler(
     ChatMemberHandler(
         bot_added,
@@ -376,14 +617,6 @@ app.add_handler(
     )
 )
 
-# PHOTO HANDLER
-app.add_handler(
-    MessageHandler(
-        filters.PHOTO,
-        photo_handler
-    )
-)
-
-print("🚀 Bot Running...")
+print("🚀 Advanced Bot Running...")
 
 app.run_polling()
