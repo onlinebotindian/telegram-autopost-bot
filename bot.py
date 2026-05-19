@@ -1,6 +1,5 @@
 import json
 import os
-import asyncio
 import threading
 from flask import Flask
 from telegram import Update, ReplyKeyboardRemove
@@ -12,11 +11,9 @@ from telegram.ext import (
     filters,
 )
 
-# ================= TOKEN =================
+# ================= CONFIG =================
 
 BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
-
-# ================= FILE =================
 
 CHANNELS_FILE = "channels.json"
 
@@ -67,7 +64,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/forward - Forward message\n"
         "/channels - Connected channels\n"
         "/analytics - Analytics\n"
-        "/delete - Delete last post"
+        "/delete - Delete last broadcast"
     )
 
     await update.message.reply_text(
@@ -75,7 +72,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardRemove()
     )
 
-# ================= AUTO CHANNEL DETECT =================
+# ================= CHANNEL DETECT =================
 
 async def detect_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -89,19 +86,7 @@ async def detect_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             save_channels()
 
-            try:
-
-                await context.bot.send_message(
-                    chat_id=update.effective_user.id,
-                    text=(
-                        f"✅ New Channel Connected\n\n"
-                        f"📢 {chat.title}\n"
-                        f"🆔 {chat.id}"
-                    )
-                )
-
-            except:
-                pass
+            print(f"Connected Channel: {chat.title}")
 
 # ================= CHANNELS =================
 
@@ -147,7 +132,7 @@ async def analytics(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = "📊 Analytics\n\n"
 
-    total = 0
+    total_subscribers = 0
 
     for ch in channels:
 
@@ -160,19 +145,19 @@ async def analytics(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 members = "Hidden"
 
+            if isinstance(members, int):
+                total_subscribers += members
+
             text += (
                 f"📢 {chat.title}\n"
                 f"👥 Subscribers: {members}\n"
                 f"🆔 {ch}\n\n"
             )
 
-            if isinstance(members, int):
-                total += members
-
         except:
             pass
 
-    text += f"👥 Total Subscribers: {total}"
+    text += f"👥 Total Subscribers: {total_subscribers}"
 
     await update.message.reply_text(text)
 
@@ -220,7 +205,7 @@ async def delete_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🗑 Deleted from {deleted} channels."
     )
 
-# ================= HANDLE =================
+# ================= HANDLE MESSAGE =================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -258,7 +243,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 failed += 1
 
-            percent = int((index / total) * 100)
+            percent = int((index / total) * 100) if total > 0 else 0
 
             try:
 
@@ -313,7 +298,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 failed += 1
 
-            percent = int((index / total) * 100)
+            percent = int((index / total) * 100) if total > 0 else 0
 
             try:
 
@@ -335,10 +320,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-# ================= MAIN =================
+# ================= RUN =================
 
-async def main():
+if __name__ == "__main__":
 
+    # Flask Thread
+    threading.Thread(target=run_web).start()
+
+    print("🌐 Flask Running")
+
+    # Telegram App
     telegram_app = Application.builder().token(BOT_TOKEN).build()
 
     telegram_app.add_handler(
@@ -379,12 +370,9 @@ async def main():
         )
     )
 
-    print("🚀 Bot Running...")
+    print("🚀 Telegram Bot Running")
 
-    await telegram_app.run_polling()
-
-# ================= RUN =================
-
-threading.Thread(target=run_web).start()
-
-asyncio.run(main())
+    telegram_app.run_polling(
+        drop_pending_updates=True,
+        close_loop=False
+    )
