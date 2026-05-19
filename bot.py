@@ -24,7 +24,7 @@ web = Flask(__name__)
 
 @web.route('/')
 def home():
-    return "Bot Running"
+    return "Bot Running Successfully"
 
 def run():
     web.run(host="0.0.0.0", port=10000)
@@ -50,7 +50,7 @@ if os.path.exists(CHANNELS_FILE):
 else:
     CHANNELS = {}
 
-# ---------------- SAVE ---------------- #
+# ---------------- SAVE CHANNELS ---------------- #
 
 def save_channels():
     with open(CHANNELS_FILE, "w") as f:
@@ -91,26 +91,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📢 Connected Channels: {len(CHANNELS)}
 
-Choose option below 👇
+Choose an option below 👇
 """
 
     await update.message.reply_text(
         text,
         reply_markup=menu
     )
-
-# ---------------- AUTO CONNECT ---------------- #
-
-async def auto_connect(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    chat = update.effective_chat
-
-    if chat.type not in ["channel", "supergroup"]:
-        return
-
-    CHANNELS[str(chat.id)] = chat.title
-
-    save_channels()
 
 # ---------------- BOT ADDED ---------------- #
 
@@ -126,7 +113,6 @@ async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_channels()
 
     for admin in ADMINS:
-
         try:
             await context.bot.send_message(
                 admin,
@@ -141,7 +127,7 @@ async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
-# ---------------- BUTTONS ---------------- #
+# ---------------- BUTTON PANEL ---------------- #
 
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -168,7 +154,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         WAITING_FORWARD.add(user)
 
         await update.message.reply_text(
-            "📨 Forward any post"
+            "📨 Forward any Telegram post"
         )
 
     # ANALYTICS
@@ -179,11 +165,11 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"""
 📊 Analytics
 
-📢 Channels: {len(CHANNELS)}
+📢 Total Connected Channels: {len(CHANNELS)}
 """
         )
 
-    # CHANNELS
+    # CHANNEL LIST
 
     elif text == "📂 Channels":
 
@@ -193,7 +179,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             txt += f"📢 {name}\n🆔 {cid}\n\n"
 
         if txt == "":
-            txt = "No channels connected"
+            txt = "❌ No connected channels"
 
         await update.message.reply_text(txt)
 
@@ -218,7 +204,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
 
         await update.message.reply_text(
-            f"🗑 Deleted from {deleted} chats"
+            f"🗑 Deleted from {deleted} channels"
         )
 
     # CANCEL
@@ -232,7 +218,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Cancelled"
         )
 
-# ---------------- BROADCAST TEXT ---------------- #
+# ---------------- TEXT BROADCAST ---------------- #
 
 async def broadcast_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -246,7 +232,7 @@ async def broadcast_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sent = 0
     failed = 0
 
-    msg = await update.message.reply_text(
+    progress = await update.message.reply_text(
         "🚀 Broadcasting..."
     )
 
@@ -266,16 +252,16 @@ async def broadcast_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             failed += 1
 
-    await msg.edit_text(
+    await progress.edit_text(
         f"""
-✅ Broadcast Complete
+✅ Broadcast Completed
 
 ✅ Sent: {sent}
 ❌ Failed: {failed}
 """
     )
 
-# ---------------- FORWARD ---------------- #
+# ---------------- FORWARD BROADCAST ---------------- #
 
 async def forward_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -284,16 +270,13 @@ async def forward_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user not in WAITING_FORWARD:
         return
 
-    if not update.message.forward_origin:
-        return
-
     WAITING_FORWARD.discard(user)
 
     sent = 0
     failed = 0
 
     progress = await update.message.reply_text(
-        "🚀 Forwarding..."
+        "🚀 Forwarding Post..."
     )
 
     for cid in CHANNELS:
@@ -301,9 +284,9 @@ async def forward_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
 
             m = await context.bot.forward_message(
-                int(cid),
-                update.message.chat.id,
-                update.message.message_id
+                chat_id=int(cid),
+                from_chat_id=update.message.chat.id,
+                message_id=update.message.message_id
             )
 
             LAST_MESSAGES[cid] = m.message_id
@@ -315,26 +298,29 @@ async def forward_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await progress.edit_text(
         f"""
-✅ Forward Broadcast Complete
+✅ Forward Broadcast Completed
 
 ✅ Sent: {sent}
 ❌ Failed: {failed}
 """
     )
 
+# ---------------- ERROR HANDLER ---------------- #
+
+async def error_handler(update, context):
+
+    print(f"ERROR: {context.error}")
+
 # ---------------- MAIN ---------------- #
 
 app = ApplicationBuilder().token(TOKEN).build()
 
+app.add_error_handler(error_handler)
+
+# START COMMAND
 app.add_handler(CommandHandler("start", start))
 
-app.add_handler(
-    ChatMemberHandler(
-        bot_added,
-        ChatMemberHandler.MY_CHAT_MEMBER
-    )
-)
-
+# BUTTON MENU
 app.add_handler(
     MessageHandler(
         filters.TEXT & ~filters.COMMAND,
@@ -342,6 +328,7 @@ app.add_handler(
     )
 )
 
+# BROADCAST TEXT
 app.add_handler(
     MessageHandler(
         filters.TEXT & ~filters.COMMAND,
@@ -349,20 +336,30 @@ app.add_handler(
     )
 )
 
+# FORWARD POSTS
 app.add_handler(
     MessageHandler(
-        filters.FORWARDED,
+        filters.ALL,
         forward_post
     )
 )
 
+# AUTO CHANNEL CONNECT
 app.add_handler(
-    MessageHandler(
-        filters.ALL,
-        auto_connect
+    ChatMemberHandler(
+        bot_added,
+        ChatMemberHandler.MY_CHAT_MEMBER
     )
 )
 
 print("🚀 Bot Running...")
 
-app.run_polling(drop_pending_updates=True)
+# ---------------- PYTHON 3.14 FIX ---------------- #
+
+asyncio.set_event_loop(asyncio.new_event_loop())
+
+# ---------------- START BOT ---------------- #
+
+app.run_polling(
+    drop_pending_updates=True
+)
