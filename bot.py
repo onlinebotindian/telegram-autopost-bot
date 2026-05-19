@@ -1,151 +1,116 @@
 from flask import Flask
 from threading import Thread
-import asyncio
 import os
 import json
-from datetime import datetime, timedelta
+import asyncio
 
 from telegram import (
     Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
     ReplyKeyboardMarkup
 )
 
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
-    ContextTypes,
     MessageHandler,
-    ChatMemberHandler,
-    filters
+    ContextTypes,
+    filters,
+    ChatMemberHandler
 )
 
-# ---------------- FLASK KEEP ALIVE ---------------- #
+# ---------------- KEEP ALIVE ---------------- #
 
-app_web = Flask('')
+web = Flask(__name__)
 
-@app_web.route('/')
+@web.route('/')
 def home():
     return "Bot Running"
 
 def run():
-    app_web.run(host='0.0.0.0', port=10000)
+    web.run(host="0.0.0.0", port=10000)
 
 Thread(target=run).start()
 
-# ---------------- ASYNC FIX ---------------- #
+# ---------------- CONFIG ---------------- #
 
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-
-# ---------------- ADMINS ---------------- #
+TOKEN = os.getenv("BOT_TOKEN")
 
 ADMINS = [
     7638053663,
     2116668482
 ]
 
-# ---------------- TOKEN ---------------- #
-
-TOKEN = os.getenv("BOT_TOKEN")
-
-# ---------------- STORAGE ---------------- #
-
 CHANNELS_FILE = "channels.json"
-HISTORY_FILE = "history.json"
 
-try:
+# ---------------- LOAD CHANNELS ---------------- #
+
+if os.path.exists(CHANNELS_FILE):
     with open(CHANNELS_FILE, "r") as f:
-        channels = json.load(f)
-except:
-    channels = {}
-
-try:
-    with open(HISTORY_FILE, "r") as f:
-        broadcast_history = json.load(f)
-except:
-    broadcast_history = {}
+        CHANNELS = json.load(f)
+else:
+    CHANNELS = {}
 
 # ---------------- SAVE ---------------- #
 
 def save_channels():
     with open(CHANNELS_FILE, "w") as f:
-        json.dump(channels, f)
+        json.dump(CHANNELS, f)
 
-def save_history():
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(broadcast_history, f)
+# ---------------- STATES ---------------- #
 
-# ---------------- VARIABLES ---------------- #
+WAITING_BROADCAST = set()
+WAITING_FORWARD = set()
 
-stats = {
-    "sent": 0,
-    "failed": 0
-}
-
-broadcast_data = {
-    "button_text": "",
-    "button_url": ""
-}
-
-last_forward = {}
-
-broadcast_number = 0
-
-# ---------------- ADMIN CHECK ---------------- #
-
-def admin_only(user_id):
-    return user_id in ADMINS
+LAST_MESSAGES = {}
 
 # ---------------- MENU ---------------- #
 
-menu_keyboard = ReplyKeyboardMarkup(
+menu = ReplyKeyboardMarkup(
     [
-        ["📤 Broadcast", "🔁 Forward"],
-        ["📊 Stats", "📢 Channels"],
-        ["🗑 Delete", "⏰ Schedule"]
+        ["📢 Broadcast", "📨 Forward"],
+        ["📊 Analytics", "📂 Channels"],
+        ["🗑 Delete Last", "❌ Cancel"]
     ],
     resize_keyboard=True
 )
+
+# ---------------- ADMIN CHECK ---------------- #
+
+def is_admin(user_id):
+    return user_id in ADMINS
 
 # ---------------- START ---------------- #
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not admin_only(update.effective_user.id):
+    if not is_admin(update.effective_user.id):
         return
 
-    text = """
-🚀 ADVANCED BROADCAST BOT
+    text = f"""
+🚀 ADVANCED BROADCAST PANEL
 
-Features:
-✅ Forward Broadcast
-✅ Schedule Posts
-✅ Analytics
-✅ Auto Detect Channels
-✅ Delete Broadcast
-✅ Progress Bar
-✅ Channel Names
-✅ Error Logs
+📢 Connected Channels: {len(CHANNELS)}
+
+Choose option below 👇
 """
 
     await update.message.reply_text(
         text,
-        reply_markup=menu_keyboard
+        reply_markup=menu
     )
 
-# ---------------- AUTO DETECT ---------------- #
+# ---------------- AUTO CONNECT ---------------- #
 
-async def detect_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def auto_connect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
 
-    if chat.type in ["channel", "supergroup"]:
+    if chat.type not in ["channel", "supergroup"]:
+        return
 
-        channels[str(chat.id)] = chat.title
+    CHANNELS[str(chat.id)] = chat.title
 
-        save_channels()
+    save_channels()
 
 # ---------------- BOT ADDED ---------------- #
 
@@ -156,299 +121,95 @@ async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type not in ["channel", "supergroup"]:
         return
 
-    channels[str(chat.id)] = chat.title
+    CHANNELS[str(chat.id)] = chat.title
 
     save_channels()
-
-    try:
-
-        count = await context.bot.get_chat_member_count(chat.id)
-
-    except:
-        count = "Unknown"
-
-    text = f"""
-✅ Connected Successfully
-
-📢 {chat.title}
-
-🆔 {chat.id}
-
-👥 Members: {count}
-"""
 
     for admin in ADMINS:
 
         try:
-
             await context.bot.send_message(
-                chat_id=admin,
-                text=text
-            )
+                admin,
+                f"""
+✅ New Channel Connected
 
+📢 {chat.title}
+
+🆔 {chat.id}
+"""
+            )
         except:
             pass
 
-# ---------------- BUTTON ---------------- #
+# ---------------- BUTTONS ---------------- #
 
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not admin_only(update.effective_user.id):
+    if not is_admin(update.effective_user.id):
         return
 
-    data = " ".join(context.args)
+    text = update.message.text
+    user = update.effective_user.id
 
-    if "|" not in data:
+    # BROADCAST
+
+    if text == "📢 Broadcast":
+
+        WAITING_BROADCAST.add(user)
 
         await update.message.reply_text(
-            "Use:\n/button TEXT | URL"
+            "📨 Send message to broadcast"
         )
 
-        return
+    # FORWARD
 
-    text, url = data.split("|")
+    elif text == "📨 Forward":
 
-    broadcast_data["button_text"] = text.strip()
-    broadcast_data["button_url"] = url.strip()
-
-    await update.message.reply_text(
-        "✅ Button Saved"
-    )
-
-# ---------------- BROADCAST ---------------- #
-
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    global broadcast_number
-
-    if not admin_only(update.effective_user.id):
-        return
-
-    text = update.message.text.replace("/broadcast", "").strip()
-
-    if not text:
+        WAITING_FORWARD.add(user)
 
         await update.message.reply_text(
-            "❌ Send message"
+            "📨 Forward any post"
         )
 
-        return
+    # ANALYTICS
 
-    progress = await update.message.reply_text(
-        "🚀 Broadcasting Started..."
-    )
-
-    keyboard = None
-
-    if broadcast_data["button_text"]:
-
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    broadcast_data["button_text"],
-                    url=broadcast_data["button_url"]
-                )
-            ]
-        ])
-
-    sent = 0
-    failed = 0
-
-    broadcast_number += 1
-
-    broadcast_history[str(broadcast_number)] = {}
-
-    total = len(channels)
-
-    for i, channel_id in enumerate(channels):
-
-        try:
-
-            msg = await context.bot.send_message(
-                chat_id=int(channel_id),
-                text=text,
-                reply_markup=keyboard
-            )
-
-            broadcast_history[str(broadcast_number)][channel_id] = msg.message_id
-
-            sent += 1
-            stats["sent"] += 1
-
-        except Exception as e:
-
-            failed += 1
-            stats["failed"] += 1
-
-            for admin in ADMINS:
-
-                try:
-
-                    await context.bot.send_message(
-                        admin,
-                        f"❌ Failed in {channels[channel_id]}\n\n{e}"
-                    )
-
-                except:
-                    pass
-
-        if i % 5 == 0:
-
-            await progress.edit_text(
-                f"🚀 Broadcasting...\n\n{i+1}/{total}"
-            )
-
-    save_history()
-
-    await progress.edit_text(
-        f"✅ Broadcast Completed\n\nSent: {sent}\nFailed: {failed}"
-    )
-
-# ---------------- FORWARD BROADCAST ---------------- #
-
-async def save_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not admin_only(update.effective_user.id):
-        return
-
-    if update.message.forward_origin:
-
-        last_forward[update.effective_user.id] = update.message
+    elif text == "📊 Analytics":
 
         await update.message.reply_text(
-            "✅ Forward Saved\n\nNow send /forwardbroadcast"
+            f"""
+📊 Analytics
+
+📢 Channels: {len(CHANNELS)}
+"""
         )
 
-# ---------------- FORWARD SEND ---------------- #
+    # CHANNELS
 
-async def forwardbroadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    elif text == "📂 Channels":
 
-    global broadcast_number
+        txt = ""
 
-    if not admin_only(update.effective_user.id):
-        return
+        for cid, name in CHANNELS.items():
+            txt += f"📢 {name}\n🆔 {cid}\n\n"
 
-    if update.effective_user.id not in last_forward:
+        if txt == "":
+            txt = "No channels connected"
 
-        await update.message.reply_text(
-            "❌ Forward a message first"
-        )
+        await update.message.reply_text(txt)
 
-        return
+    # DELETE LAST
 
-    progress = await update.message.reply_text(
-        "🚀 Forward Broadcasting..."
-    )
+    elif text == "🗑 Delete Last":
 
-    message = last_forward[update.effective_user.id]
+        deleted = 0
 
-    broadcast_number += 1
-
-    broadcast_history[str(broadcast_number)] = {}
-
-    total = len(channels)
-
-    for i, channel_id in enumerate(channels):
-
-        try:
-
-            msg = await context.bot.forward_message(
-                chat_id=int(channel_id),
-                from_chat_id=message.chat.id,
-                message_id=message.message_id
-            )
-
-            broadcast_history[str(broadcast_number)][channel_id] = msg.message_id
-
-        except Exception as e:
-
-            for admin in ADMINS:
-
-                try:
-
-                    await context.bot.send_message(
-                        admin,
-                        f"❌ Failed in {channels[channel_id]}\n\n{e}"
-                    )
-
-                except:
-                    pass
-
-        if i % 5 == 0:
-
-            await progress.edit_text(
-                f"🚀 Forwarding...\n\n{i+1}/{total}"
-            )
-
-    save_history()
-
-    await progress.edit_text(
-        "✅ Forward Broadcast Completed"
-    )
-
-# ---------------- DELETE ---------------- #
-
-async def delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not admin_only(update.effective_user.id):
-        return
-
-    if not context.args:
-
-        await update.message.reply_text(
-            "Use:\n/delete NUMBER"
-        )
-
-        return
-
-    num = context.args[0]
-
-    if num not in broadcast_history:
-
-        await update.message.reply_text(
-            "❌ Broadcast not found"
-        )
-
-        return
-
-    deleted = 0
-
-    for channel_id, msg_id in broadcast_history[num].items():
-
-        try:
-
-            await context.bot.delete_message(
-                chat_id=int(channel_id),
-                message_id=msg_id
-            )
-
-            deleted += 1
-
-        except:
-            pass
-
-    await update.message.reply_text(
-        f"🗑 Deleted from {deleted} chats"
-    )
-
-# ---------------- DELETE ALL ---------------- #
-
-async def deleteall(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not admin_only(update.effective_user.id):
-        return
-
-    deleted = 0
-
-    for b in broadcast_history.values():
-
-        for channel_id, msg_id in b.items():
+        for cid, msgid in LAST_MESSAGES.items():
 
             try:
 
                 await context.bot.delete_message(
-                    chat_id=int(channel_id),
-                    message_id=msg_id
+                    int(cid),
+                    msgid
                 )
 
                 deleted += 1
@@ -456,160 +217,117 @@ async def deleteall(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
 
-    await update.message.reply_text(
-        f"🗑 Deleted {deleted} messages"
-    )
-
-# ---------------- CHANNELS ---------------- #
-
-async def channels_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not admin_only(update.effective_user.id):
-        return
-
-    text = ""
-
-    for cid, name in channels.items():
-
-        text += f"📢 {name}\n🆔 {cid}\n\n"
-
-    if not text:
-        text = "No channels connected"
-
-    await update.message.reply_text(text)
-
-# ---------------- STATS ---------------- #
-
-async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not admin_only(update.effective_user.id):
-        return
-
-    total_subs = 0
-
-    for cid in channels:
-
-        try:
-
-            count = await context.bot.get_chat_member_count(int(cid))
-
-            total_subs += count
-
-        except:
-            pass
-
-    text = f"""
-📊 Analytics
-
-📢 Channels: {len(channels)}
-
-👥 Total Subs: {total_subs}
-
-✅ Sent: {stats['sent']}
-
-❌ Failed: {stats['failed']}
-"""
-
-    await update.message.reply_text(text)
-
-# ---------------- SCHEDULE ---------------- #
-
-async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not admin_only(update.effective_user.id):
-        return
-
-    if len(context.args) < 2:
-
         await update.message.reply_text(
-            "Use:\n/schedule MINUTES message"
+            f"🗑 Deleted from {deleted} chats"
         )
 
+    # CANCEL
+
+    elif text == "❌ Cancel":
+
+        WAITING_BROADCAST.discard(user)
+        WAITING_FORWARD.discard(user)
+
+        await update.message.reply_text(
+            "❌ Cancelled"
+        )
+
+# ---------------- BROADCAST TEXT ---------------- #
+
+async def broadcast_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    user = update.effective_user.id
+
+    if user not in WAITING_BROADCAST:
         return
 
-    minutes = int(context.args[0])
+    WAITING_BROADCAST.discard(user)
 
-    text = " ".join(context.args[1:])
+    sent = 0
+    failed = 0
 
-    await update.message.reply_text(
-        f"⏰ Scheduled in {minutes} mins"
+    msg = await update.message.reply_text(
+        "🚀 Broadcasting..."
     )
 
-    await asyncio.sleep(minutes * 60)
-
-    for channel_id in channels:
+    for cid in CHANNELS:
 
         try:
 
-            await context.bot.send_message(
-                int(channel_id),
-                text
+            m = await context.bot.send_message(
+                int(cid),
+                update.message.text
             )
 
+            LAST_MESSAGES[cid] = m.message_id
+
+            sent += 1
+
         except:
-            pass
+            failed += 1
 
-# ---------------- BUTTON MENU ---------------- #
+    await msg.edit_text(
+        f"""
+✅ Broadcast Complete
 
-async def button_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+✅ Sent: {sent}
+❌ Failed: {failed}
+"""
+    )
 
-    text = update.message.text
+# ---------------- FORWARD ---------------- #
 
-    if text == "📊 Stats":
-        await stats_cmd(update, context)
+async def forward_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    elif text == "📢 Channels":
-        await channels_cmd(update, context)
+    user = update.effective_user.id
 
-    elif text == "🗑 Delete":
+    if user not in WAITING_FORWARD:
+        return
 
-        await update.message.reply_text(
-            "Use:\n/delete NUMBER"
-        )
+    if not update.message.forward_origin:
+        return
 
-    elif text == "📤 Broadcast":
+    WAITING_FORWARD.discard(user)
 
-        await update.message.reply_text(
-            "Use:\n/broadcast YOUR MESSAGE"
-        )
+    sent = 0
+    failed = 0
 
-    elif text == "🔁 Forward":
+    progress = await update.message.reply_text(
+        "🚀 Forwarding..."
+    )
 
-        await update.message.reply_text(
-            "Forward a message then send:\n/forwardbroadcast"
-        )
+    for cid in CHANNELS:
 
-    elif text == "⏰ Schedule":
+        try:
 
-        await update.message.reply_text(
-            "Use:\n/schedule MINUTES MESSAGE"
-        )
+            m = await context.bot.forward_message(
+                int(cid),
+                update.message.chat.id,
+                update.message.message_id
+            )
 
-# ---------------- APP ---------------- #
+            LAST_MESSAGES[cid] = m.message_id
+
+            sent += 1
+
+        except:
+            failed += 1
+
+    await progress.edit_text(
+        f"""
+✅ Forward Broadcast Complete
+
+✅ Sent: {sent}
+❌ Failed: {failed}
+"""
+    )
+
+# ---------------- MAIN ---------------- #
 
 app = ApplicationBuilder().token(TOKEN).build()
 
-# COMMANDS
 app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("broadcast", broadcast))
-app.add_handler(CommandHandler("button", button))
-app.add_handler(CommandHandler("forwardbroadcast", forwardbroadcast))
-app.add_handler(CommandHandler("delete", delete))
-app.add_handler(CommandHandler("deleteall", deleteall))
-app.add_handler(CommandHandler("channels", channels_cmd))
-app.add_handler(CommandHandler("stats", stats_cmd))
-app.add_handler(CommandHandler("schedule", schedule))
 
-# AUTO DETECT
-app.add_handler(MessageHandler(filters.ALL, detect_channels))
-
-# BUTTON MENU
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_menu))
-
-# SAVE FORWARD
-app.add_handler(MessageHandler(filters.FORWARDED, save_forward))
-
-# BOT ADDED
 app.add_handler(
     ChatMemberHandler(
         bot_added,
@@ -617,6 +335,34 @@ app.add_handler(
     )
 )
 
-print("🚀 Advanced Bot Running...")
+app.add_handler(
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        buttons
+    )
+)
 
-app.run_polling()
+app.add_handler(
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        broadcast_text
+    )
+)
+
+app.add_handler(
+    MessageHandler(
+        filters.FORWARDED,
+        forward_post
+    )
+)
+
+app.add_handler(
+    MessageHandler(
+        filters.ALL,
+        auto_connect
+    )
+)
+
+print("🚀 Bot Running...")
+
+app.run_polling(drop_pending_updates=True)
