@@ -3,15 +3,10 @@ import os
 import asyncio
 import threading
 from flask import Flask
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
+from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
-    CallbackQueryHandler,
     MessageHandler,
     ContextTypes,
     filters,
@@ -22,7 +17,7 @@ from telegram.ext import (
 
 BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
 
-# ================= FILES =================
+# ================= FILE =================
 
 CHANNELS_FILE = "channels.json"
 
@@ -32,7 +27,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "Bot Running!"
+    return "Bot Running Successfully!"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
@@ -61,81 +56,87 @@ waiting_forward = set()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    keyboard = [
-        [
-            InlineKeyboardButton("📢 Broadcast", callback_data="broadcast"),
-            InlineKeyboardButton("📩 Forward", callback_data="forward"),
-        ],
-        [
-            InlineKeyboardButton("📂 Channels", callback_data="channels"),
-            InlineKeyboardButton("🗑 Delete Last", callback_data="delete"),
-        ],
-    ]
-
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
     text = (
         "✅ Bot Active\n\n"
-        "Add bot as admin in channels.\n"
-        "Then use buttons below."
+        "Available Commands:\n\n"
+        "/broadcast - Broadcast message\n"
+        "/forward - Forward message\n"
+        "/channels - Show channels\n"
+        "/analytics - Bot analytics\n"
+        "/delete - Delete last post"
     )
 
-    await update.message.reply_text(
-        text,
-        reply_markup=reply_markup
+    await update.message.reply_text(text)
+
+# ================= ANALYTICS =================
+
+async def analytics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    text = (
+        f"📊 Bot Analytics\n\n"
+        f"📂 Connected Channels: {len(channels)}"
     )
 
-# ================= BUTTONS =================
+    await update.message.reply_text(text)
 
-async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ================= CHANNELS =================
 
-    query = update.callback_query
-    await query.answer()
+async def show_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    user_id = query.from_user.id
-
-    if query.data == "broadcast":
-        waiting_broadcast.add(user_id)
-        await query.message.reply_text(
-            "📢 Send message to broadcast."
-        )
-
-    elif query.data == "forward":
-        waiting_forward.add(user_id)
-        await query.message.reply_text(
-            "📩 Forward any message now."
-        )
-
-    elif query.data == "channels":
-
-        if not channels:
-            text = "❌ No channels connected."
-        else:
-            text = "📂 Connected Channels:\n\n"
-            for ch in channels:
-                text += f"{ch}\n"
-
-        await query.message.reply_text(text)
-
-    elif query.data == "delete":
-
-        deleted = 0
+    if not channels:
+        text = "❌ No channels connected."
+    else:
+        text = "📂 Connected Channels:\n\n"
 
         for ch in channels:
-            try:
-                await context.bot.delete_message(
-                    chat_id=ch,
-                    message_id=context.user_data.get("last_msg")
-                )
-                deleted += 1
-            except:
-                pass
+            text += f"{ch}\n"
 
-        await query.message.reply_text(
-            f"🗑 Deleted from {deleted} channels."
-        )
+    await update.message.reply_text(text)
 
-# ================= HANDLE MESSAGES =================
+# ================= BROADCAST =================
+
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    waiting_broadcast.add(update.effective_user.id)
+
+    await update.message.reply_text(
+        "📢 Send message to broadcast."
+    )
+
+# ================= FORWARD =================
+
+async def forward_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    waiting_forward.add(update.effective_user.id)
+
+    await update.message.reply_text(
+        "📩 Forward any message now."
+    )
+
+# ================= DELETE =================
+
+async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    deleted = 0
+
+    for ch in channels:
+
+        try:
+            await context.bot.delete_message(
+                chat_id=ch,
+                message_id=context.user_data.get("last_msg")
+            )
+
+            deleted += 1
+
+        except:
+            pass
+
+    await update.message.reply_text(
+        f"🗑 Deleted from {deleted} channels."
+    )
+
+# ================= HANDLE MESSAGE =================
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -150,7 +151,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success = 0
         failed = 0
 
-        sent_message_id = None
+        last_message_id = None
 
         for ch in channels:
 
@@ -160,13 +161,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text=update.message.text
                 )
 
-                sent_message_id = msg.message_id
+                last_message_id = msg.message_id
                 success += 1
 
             except:
                 failed += 1
 
-        context.user_data["last_msg"] = sent_message_id
+        context.user_data["last_msg"] = last_message_id
 
         await update.message.reply_text(
             f"✅ Broadcast Completed\n\n"
@@ -185,22 +186,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success = 0
         failed = 0
 
-        sent_message_id = None
+        last_message_id = None
 
         for ch in channels:
 
             try:
-                msg = await update.message.forward(
-                    chat_id=ch
-                )
+                msg = await update.message.forward(chat_id=ch)
 
-                sent_message_id = msg.message_id
+                last_message_id = msg.message_id
                 success += 1
 
             except:
                 failed += 1
 
-        context.user_data["last_msg"] = sent_message_id
+        context.user_data["last_msg"] = last_message_id
 
         await update.message.reply_text(
             f"✅ Forward Completed\n\n"
@@ -210,7 +209,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-# ================= BOT ADDED TO CHANNEL =================
+# ================= BOT ADDED =================
 
 async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -219,6 +218,7 @@ async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type == "channel":
 
         if chat.id not in channels:
+
             channels.append(chat.id)
             save_channels()
 
@@ -234,7 +234,7 @@ async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
 
-# ================= ERROR HANDLER =================
+# ================= ERROR =================
 
 async def error_handler(update, context):
 
@@ -249,12 +249,12 @@ async def error_handler(update, context):
 
 if __name__ == "__main__":
 
-    # START FLASK
+    # START WEB
     flask_thread = threading.Thread(target=run_web)
     flask_thread.daemon = True
     flask_thread.start()
 
-    print("🌐 Flask Started")
+    print("🌐 Flask Running")
 
     # EVENT LOOP
     loop = asyncio.new_event_loop()
@@ -263,14 +263,32 @@ if __name__ == "__main__":
     # TELEGRAM APP
     telegram_app = Application.builder().token(BOT_TOKEN).build()
 
+    # COMMANDS
     telegram_app.add_handler(
         CommandHandler("start", start)
     )
 
     telegram_app.add_handler(
-        CallbackQueryHandler(buttons)
+        CommandHandler("broadcast", broadcast_command)
     )
 
+    telegram_app.add_handler(
+        CommandHandler("forward", forward_command)
+    )
+
+    telegram_app.add_handler(
+        CommandHandler("channels", show_channels)
+    )
+
+    telegram_app.add_handler(
+        CommandHandler("analytics", analytics)
+    )
+
+    telegram_app.add_handler(
+        CommandHandler("delete", delete_command)
+    )
+
+    # BOT ADDED
     telegram_app.add_handler(
         ChatMemberHandler(
             bot_added,
@@ -278,6 +296,7 @@ if __name__ == "__main__":
         )
     )
 
+    # MESSAGE HANDLER
     telegram_app.add_handler(
         MessageHandler(
             filters.ALL & ~filters.COMMAND,
