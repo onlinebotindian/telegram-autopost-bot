@@ -29,41 +29,50 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    ChatMemberHandler,
     filters
 )
 
+# YOUR ADMIN ID
 ADMIN_ID = 7638053663
 
+# BOT TOKEN
 TOKEN = os.getenv("BOT_TOKEN")
 
+# STORES CHANNELS
 channels = set()
 
+# LAST BROADCAST IDS
 last_messages = {}
 
+# BUTTON DATA
 broadcast_data = {
     "button_text": "",
     "button_url": ""
 }
 
+# STATS
 stats = {
     "sent": 0,
     "failed": 0
 }
 
+# ADMIN CHECK
 def admin_only(user_id):
     return user_id == ADMIN_ID
 
+# START COMMAND
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
         return
 
     text = """
-🚀 Broadcast Bot Active
+🚀 PRIVATE BROADCAST BOT ACTIVE
 
 Commands:
 
-/broadcast MESSAGE
+/broadcast YOUR MESSAGE
 
 /button TEXT | URL
 
@@ -78,6 +87,7 @@ Commands:
 
     await update.message.reply_text(text)
 
+# AUTO DETECT CHANNELS
 async def detect_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
@@ -86,6 +96,37 @@ async def detect_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         channels.add(chat.id)
 
+# BOT ADDED NOTIFICATION
+async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    chat = update.effective_chat
+
+    if chat.type not in ["channel", "supergroup"]:
+        return
+
+    channels.add(chat.id)
+
+    try:
+
+        text = f"""
+✅ Bot Added Successfully
+
+📢 Channel:
+{chat.title}
+
+🆔 Chat ID:
+{chat.id}
+"""
+
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=text
+        )
+
+    except Exception as e:
+        print(e)
+
+# BUTTON COMMAND
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
@@ -111,12 +152,21 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ Button Saved"
     )
 
+# TEXT BROADCAST
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
         return
 
     text = " ".join(context.args)
+
+    if not text:
+
+        await update.message.reply_text(
+            "❌ Send message"
+        )
+
+        return
 
     keyboard = None
 
@@ -163,6 +213,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ Sent to {success} chats\n❌ Failed: {failed}"
     )
 
+# DELETE LAST BROADCAST
 async def deletebroadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
@@ -188,6 +239,7 @@ async def deletebroadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🗑 Deleted from {deleted} chats"
     )
 
+# CHANNEL LIST
 async def channels_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
@@ -198,27 +250,29 @@ async def channels_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if not text:
-        text = "No channels found"
+        text = "No channels connected"
 
     await update.message.reply_text(text)
 
+# STATS
 async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
         return
 
     text = f"""
-📊 Stats
+📊 Analytics
 
-Channels: {len(channels)}
+Connected Chats: {len(channels)}
 
-Sent: {stats['sent']}
+Sent Posts: {stats['sent']}
 
-Failed: {stats['failed']}
+Failed Posts: {stats['failed']}
 """
 
     await update.message.reply_text(text)
 
+# SUBSCRIBER COUNT
 async def subs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
@@ -247,6 +301,7 @@ async def subs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(result)
 
+# PHOTO BROADCAST
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not admin_only(update.effective_user.id):
@@ -296,8 +351,10 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ Photo Sent to {success} chats"
     )
 
+# APP
 app = ApplicationBuilder().token(TOKEN).build()
 
+# COMMANDS
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("broadcast", broadcast))
 app.add_handler(CommandHandler("button", button))
@@ -306,7 +363,18 @@ app.add_handler(CommandHandler("channels", channels_cmd))
 app.add_handler(CommandHandler("stats", stats_cmd))
 app.add_handler(CommandHandler("subs", subs))
 
+# AUTO DETECT
 app.add_handler(MessageHandler(filters.ALL, detect_channels))
+
+# BOT ADDED EVENT
+app.add_handler(
+    ChatMemberHandler(
+        bot_added,
+        ChatMemberHandler.MY_CHAT_MEMBER
+    )
+)
+
+# PHOTO HANDLER
 app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
 
 print("🚀 Bot Running...")
