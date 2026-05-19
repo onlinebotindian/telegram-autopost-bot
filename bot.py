@@ -23,7 +23,7 @@ from telegram.ext import (
 
 # ================= BOT CONFIG =================
 
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
 
 ADMINS = [123456789, 2116668482]
 
