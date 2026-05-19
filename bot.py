@@ -21,26 +21,26 @@ from telegram.ext import (
     ChatMemberHandler
 )
 
-# ================= BOT CONFIG =================
+# ================= CONFIG =================
 
 BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
 
-ADMINS = [123456789, 2116668482]
+ADMINS = [2116668482]
 
 CHANNELS_FILE = "channels.json"
 USERS_FILE = "users.json"
 
 # ================= LOAD DATA =================
 
-def load_data(file_name):
+def load_data(filename):
     try:
-        with open(file_name, "r") as f:
+        with open(filename, "r") as f:
             return json.load(f)
     except:
         return []
 
-def save_data(file_name, data):
-    with open(file_name, "w") as f:
+def save_data(filename, data):
+    with open(filename, "w") as f:
         json.dump(data, f)
 
 channels = load_data(CHANNELS_FILE)
@@ -60,7 +60,8 @@ def run_web():
 
 # ================= BUTTONS =================
 
-def main_buttons():
+def buttons():
+
     keyboard = [
         [
             InlineKeyboardButton("📢 Broadcast", callback_data="broadcast")
@@ -94,17 +95,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 👥 Users: {len(users)}
 📢 Channels: {len(channels)}
 
-Select an option below:
+Choose option below:
 """
 
     await update.message.reply_text(
         text,
-        reply_markup=main_buttons()
+        reply_markup=buttons()
     )
 
 # ================= BUTTON HANDLER =================
 
-async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
     await query.answer()
@@ -117,13 +118,15 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data == "broadcast":
+
         context.user_data["mode"] = "broadcast"
 
         await query.message.reply_text(
-            "📢 Send message to broadcast to all users."
+            "📢 Send text message now."
         )
 
     elif data == "forward":
+
         context.user_data["mode"] = "forward"
 
         await query.message.reply_text(
@@ -133,10 +136,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "analytics":
 
         text = f"""
-📊 Bot Analytics
+📊 BOT ANALYTICS
 
-👥 Total Users: {len(users)}
-📢 Connected Channels: {len(channels)}
+👥 Users: {len(users)}
+📢 Channels: {len(channels)}
 🕒 Time: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}
 """
 
@@ -145,8 +148,11 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "channels":
 
         if len(channels) == 0:
+
             text = "❌ No connected channels."
+
         else:
+
             text = "📢 Connected Channels:\n\n"
 
             for ch in channels:
@@ -180,16 +186,19 @@ async def bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_data(CHANNELS_FILE, channels)
 
         for admin in ADMINS:
+
             try:
+
                 await context.bot.send_message(
                     admin,
                     f"""
-✅ Bot Added Successfully
+✅ New Channel Connected
 
-📢 Channel: {chat.title}
-🆔 Chat ID: {chat.id}
+📢 Name: {chat.title}
+🆔 ID: {chat.id}
 """
                 )
+
             except:
                 pass
 
@@ -211,37 +220,51 @@ async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     failed = 0
 
     progress = await update.message.reply_text(
-        "🚀 Broadcast Started..."
+        "🚀 Broadcasting..."
     )
+
+    # ================= TEXT BROADCAST =================
 
     if mode == "broadcast":
 
-        for user in users:
+        for ch in channels:
 
             try:
+
                 await context.bot.send_message(
-                    chat_id=user,
+                    chat_id=ch["id"],
                     text=update.message.text
                 )
 
                 success += 1
 
-            except:
+            except Exception as e:
+
+                print(e)
                 failed += 1
+
+    # ================= FORWARD BROADCAST =================
 
     elif mode == "forward":
 
-        for user in users:
+        for ch in channels:
 
             try:
-                await update.message.forward(
-                    chat_id=user
+
+                await context.bot.forward_message(
+                    chat_id=ch["id"],
+                    from_chat_id=update.message.chat_id,
+                    message_id=update.message.message_id
                 )
 
                 success += 1
 
-            except:
+            except Exception as e:
+
+                print(e)
                 failed += 1
+
+    # ================= DONE =================
 
     await progress.edit_text(
         f"""
@@ -249,6 +272,7 @@ async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 ✔ Success: {success}
 ❌ Failed: {failed}
+📢 Total Channels: {len(channels)}
 """
     )
 
@@ -258,16 +282,7 @@ async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update, context):
 
-    print(f"Error: {context.error}")
-
-    for admin in ADMINS:
-        try:
-            await context.bot.send_message(
-                admin,
-                f"⚠️ Bot Error:\n{context.error}"
-            )
-        except:
-            pass
+    print(f"ERROR: {context.error}")
 
 # ================= MAIN =================
 
@@ -277,10 +292,12 @@ if __name__ == "__main__":
 
     telegram_app = Application.builder().token(BOT_TOKEN).build()
 
-    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(
+        CommandHandler("start", start)
+    )
 
     telegram_app.add_handler(
-        CallbackQueryHandler(button_click)
+        CallbackQueryHandler(button_handler)
     )
 
     telegram_app.add_handler(
@@ -301,7 +318,7 @@ if __name__ == "__main__":
 
     print("🚀 Bot Running...")
 
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-telegram_app.run_polling()
+    telegram_app.run_polling()
