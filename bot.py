@@ -9,13 +9,17 @@ from telegram.ext import (
 import asyncio
 import json
 import os
+import nest_asyncio
 
-BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
+# Fix asyncio issue on Render
+nest_asyncio.apply()
+
+BOT_TOKEN = "YOUR_BOT_TOKEN"
 
 GROUPS_FILE = "groups.json"
 
 MESSAGES = [
-    "🔥 Stay active everyone!Must Join For Latest Movie/Series",
+    "🔥 🔥 Stay active everyone!Must Join For Latest Movie/Series",
     "📢 https://t.me/+KL1eYgAdfM5iZmU1",
     "🚀 https://t.me/+KL1eYgAdfM5iZmU1"
 ]
@@ -26,7 +30,7 @@ app_web = Flask(__name__)
 
 @app_web.route('/')
 def home():
-    return "Bot Running!"
+    return "Bot Running Successfully!"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
@@ -46,22 +50,25 @@ def save_groups(groups):
 
 groups = load_groups()
 
-# ---------------- TRACK GROUPS ---------------- #
+# ---------------- DETECT GROUPS ---------------- #
 
 async def track_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
 
     if chat:
+
         chat_id = chat.id
 
         if chat_id not in groups:
+
             groups.append(chat_id)
+
             save_groups(groups)
 
-            print(f"Added Group: {chat_id}")
+            print(f"Added New Group: {chat_id}")
 
-# ---------------- AUTO SENDER ---------------- #
+# ---------------- AUTO MESSAGE LOOP ---------------- #
 
 async def auto_send(app):
 
@@ -76,29 +83,40 @@ async def auto_send(app):
         for group_id in groups:
 
             try:
+
                 await bot.send_message(
                     chat_id=group_id,
                     text=msg
                 )
 
-                print(f"Sent to {group_id}")
+                print(f"Message sent to {group_id}")
 
             except Exception as e:
-                print(e)
+
+                print(f"Failed {group_id}: {e}")
 
         count += 1
 
-        await asyncio.sleep(540)
+        await asyncio.sleep(540)  # 9 minutes
+
+# ---------------- START BOT ---------------- #
 
 async def on_start(app):
+
     asyncio.create_task(auto_send(app))
 
 # ---------------- MAIN ---------------- #
 
 def main():
 
+    # Start Flask Web Server
     Thread(target=run_web).start()
 
+    # Create Event Loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Telegram App
     app = (
         Application.builder()
         .token(BOT_TOKEN)
@@ -106,6 +124,7 @@ def main():
         .build()
     )
 
+    # Detect when bot added to groups
     app.add_handler(
         ChatMemberHandler(
             track_groups,
@@ -115,6 +134,7 @@ def main():
 
     print("Bot Running...")
 
+    # Start Bot
     app.run_polling()
 
 if __name__ == "__main__":
