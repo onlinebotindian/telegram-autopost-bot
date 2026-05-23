@@ -117,8 +117,9 @@ async def auto_send(app):
                     try:
 
                         await app.bot.send_message(
-                            chat_id=group_id,
-                            text=msg
+    chat_id=group_id,
+    text=msg,
+    disable_web_page_preview=True
                         )
 
                         print(f"Sent to {group_id}")
