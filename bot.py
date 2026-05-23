@@ -18,9 +18,7 @@ import os
 BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
 
 MESSAGES = [
-    "🔥🔥 Stay active everyone! Must Join For Latest Movie/Series",
-    "📢 https://t.me/+KL1eYgAdfM5iZmU1",
-    "🚀 https://t.me/+KL1eYgAdfM5iZmU1"
+    "🔥🔥 Stay active everyone! Must Join For Latest Movie/Series\nhttps://t.me/+KL1eYgAdfM5iZmU1\nhttps://t.me/+KL1eYgAdfM5iZmU1"
 ]
 
 GROUPS_FILE = "groups.json"
