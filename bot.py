@@ -14,7 +14,7 @@ import nest_asyncio
 # Fix asyncio issue on Render
 nest_asyncio.apply()
 
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
 
 GROUPS_FILE = "groups.json"
 
