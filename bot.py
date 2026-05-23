@@ -2,16 +2,16 @@ import asyncio
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
+
 from flask import Flask
 from threading import Thread
-from telegram import Update, Bot
+from telegram import Update
 from telegram.ext import (
     Application,
     MessageHandler,
     ContextTypes,
     filters,
 )
-import asyncio
 import json
 import os
 
@@ -25,7 +25,7 @@ MESSAGES = [
 
 GROUPS_FILE = "groups.json"
 
-# ---------------- WEB ---------------- #
+# ---------------- WEB SERVER ---------------- #
 
 app_web = Flask(__name__)
 
@@ -51,31 +51,40 @@ def save_groups(groups):
 
 groups = load_groups()
 
-# ---------------- AUTO DETECT GROUPS ---------------- #
+# ---------------- DETECT GROUP ---------------- #
 
 async def detect_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
 
-    if chat:
+    if not chat:
+        return
 
-        chat_id = chat.id
+    if chat.type not in ["group", "supergroup", "channel"]:
+        return
 
-        if str(chat.type) in ["group", "supergroup", "channel"]:
+    chat_id = chat.id
 
-            if chat_id not in groups:
+    if chat_id not in groups:
 
-                groups.append(chat_id)
+        groups.append(chat_id)
 
-                save_groups(groups)
+        save_groups(groups)
 
-                print(f"Added New Group: {chat_id}")
+        print(f"Added Group: {chat_id}")
+
+        # Instant live message
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="✅ Bot is now active in this group!\n🔥 Auto posting started."
+            )
+        except:
+            pass
 
 # ---------------- AUTO SEND ---------------- #
 
 async def auto_send(app):
-
-    bot: Bot = app.bot
 
     count = 0
 
@@ -89,7 +98,7 @@ async def auto_send(app):
 
                 try:
 
-                    await bot.send_message(
+                    await app.bot.send_message(
                         chat_id=group_id,
                         text=msg
                     )
@@ -98,15 +107,15 @@ async def auto_send(app):
 
                 except Exception as e:
 
-                    print(f"Error {group_id}: {e}")
+                    print(f"Error: {e}")
 
             count += 1
 
-        await asyncio.sleep(40)
+        await asyncio.sleep(30)
 
 # ---------------- START ---------------- #
 
-async def on_start(app):
+async def post_init(app):
 
     asyncio.create_task(auto_send(app))
 
@@ -119,12 +128,10 @@ def main():
     app = (
         Application.builder()
         .token(BOT_TOKEN)
+        .post_init(post_init)
         .build()
     )
 
-    app.post_init = on_start
-
-    # Detect every message/group automatically
     app.add_handler(
         MessageHandler(
             filters.ALL,
