@@ -1,108 +1,72 @@
 import asyncio
-
-# Fix Python 3.14 asyncio issue
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-
+import threading
 from flask import Flask
-from threading import Thread
 from telegram import Update
 from telegram.ext import (
-    Application,
-    MessageHandler,
+    ApplicationBuilder,
+    ChatMemberHandler,
     ContextTypes,
-    filters,
 )
-import json
-import os
 
-# ---------------- BOT TOKEN ---------------- #
+# =========================
+# BOT TOKEN
+# =========================
+TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
 
-BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
+# =========================
+# MESSAGE
+# =========================
+MESSAGE = """🔥🔥 Stay active everyone! Must Join For Latest Movie/Series
+https://t.me/+KL1eYgAdfM5iZmU1
+https://t.me/+KL1eYgAdfM5iZmU1"""
 
-# ---------------- AUTO MESSAGE ---------------- #
+# =========================
+# SAVE GROUPS
+# =========================
+groups = set()
 
-MESSAGES = [
-    "🔥🔥 Stay active everyone! Must Join For Latest Movie/Series\nhttps://t.me/+8xk_1SWS_spjYjdl\nhttps://t.me/+8xk_1SWS_spjYjdl"
-]
+# =========================
+# FLASK SERVER
+# =========================
+web = Flask(__name__)
 
-GROUPS_FILE = "groups.json"
-
-# ---------------- WEB SERVER ---------------- #
-
-app_web = Flask(__name__)
-
-@app_web.route('/')
+@web.route("/")
 def home():
-    return "Bot Running Successfully!"
+    return "Bot Running!"
 
 def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app_web.run(host="0.0.0.0", port=port)
+    web.run(host="0.0.0.0", port=10000)
 
-# ---------------- STORAGE ---------------- #
-
-def load_groups():
-
-    if os.path.exists(GROUPS_FILE):
-
-        with open(GROUPS_FILE, "r") as f:
-            return json.load(f)
-
-    return []
-
-def save_groups(groups):
-
-    with open(GROUPS_FILE, "w") as f:
-        json.dump(groups, f)
-
-groups = load_groups()
-
-# ---------------- DETECT GROUP ---------------- #
-
-async def detect_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# =========================
+# WHEN BOT BECOMES ADMIN
+# =========================
+async def track_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
-
         chat = update.effective_chat
 
-        if not chat:
-            return
+        if chat:
 
-        if chat.type not in ["group", "supergroup", "channel"]:
-            return
+            group_id = chat.id
 
-        chat_id = chat.id
+            if group_id not in groups:
 
-        if chat_id not in groups:
+                groups.add(group_id)
 
-            groups.append(chat_id)
-
-            save_groups(groups)
-
-            print(f"Added Group: {chat_id}")
-
-            # Instant message when added
-            try:
+                print(f"Added Group: {group_id}")
 
                 await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="✅ Bot is now active in this group!\n🔥 Auto posting started."
+                    chat_id=group_id,
+                    text="✅ Auto Post Bot Activated Successfully!"
                 )
 
-            except Exception as e:
-
-                print(e)
-
     except Exception as e:
+        print(f"Track Error: {e}")
 
-        print(e)
-
-# ---------------- AUTO SEND LOOP ---------------- #
-
+# =========================
+# AUTO SEND LOOP
+# =========================
 async def auto_send(app):
-
-    count = 0
 
     while True:
 
@@ -110,177 +74,70 @@ async def auto_send(app):
 
             if groups:
 
-                msg = MESSAGES[count % len(MESSAGES)]
-
-                for group_id in groups:
+                for group_id in list(groups):
 
                     try:
 
                         await app.bot.send_message(
-    chat_id=group_id,
-    text=msg,
-    disable_web_page_preview=True
+                            chat_id=group_id,
+                            text=MESSAGE,
+                            disable_web_page_preview=True
                         )
 
                         print(f"Sent to {group_id}")
 
                     except Exception as e:
 
-                        print(f"Group Error: {e}")
+                        print(f"Send Error: {e}")
 
-                count += 1
-
+            # 30 seconds
             await asyncio.sleep(30)
 
         except Exception as e:
 
-            print(f"Loop Error: {e}")
+            print(f"Loop Crash: {e}")
 
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
 
-# ---------------- MAIN ---------------- #
+# =========================
+# STARTUP
+# =========================
+async def on_start(app):
 
+    asyncio.create_task(auto_send(app))
+
+    print("Auto Sender Started!")
+
+# =========================
+# MAIN
+# =========================
 def main():
 
-    Thread(target=run_web).start()
+    threading.Thread(target=run_web).start()
 
     app = (
-        Application.builder()
-        .token(BOT_TOKEN)
+        ApplicationBuilder()
+        .token(TOKEN)
+        .post_init(on_start)
         .build()
     )
 
-    # Detect groups automatically
     app.add_handler(
-        MessageHandler(
-            filters.ALL,
-            detect_group
+        ChatMemberHandler(
+            track_groups,
+            ChatMemberHandler.MY_CHAT_MEMBER
         )
     )
-
-    async def startup(app):
-
-        print("Starting Auto Send Loop...")
-
-        asyncio.create_task(auto_send(app))
-
-    app.post_init = startup
 
     print("Bot Running...")
 
     app.run_polling(
-        drop_pending_updates=True
+        drop_pending_updates=True,
+        close_loop=False,
+        allowed_updates=Update.ALL_TYPES,
+        poll_interval=2,
+        timeout=30
     )
-
-# ---------------- START ---------------- #
-
-if __name__ == "__main__":
-    main()
-# ---------------- STORAGE ---------------- #
-
-def load_groups():
-    if os.path.exists(GROUPS_FILE):
-        with open(GROUPS_FILE, "r") as f:
-            return json.load(f)
-    return []
-
-def save_groups(groups):
-    with open(GROUPS_FILE, "w") as f:
-        json.dump(groups, f)
-
-groups = load_groups()
-
-# ---------------- DETECT GROUP ---------------- #
-
-async def detect_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    chat = update.effective_chat
-
-    if not chat:
-        return
-
-    if chat.type not in ["group", "supergroup", "channel"]:
-        return
-
-    chat_id = chat.id
-
-    if chat_id not in groups:
-
-        groups.append(chat_id)
-
-        save_groups(groups)
-
-        print(f"Added Group: {chat_id}")
-
-        # Instant live message
-        try:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="✅ Bot is now active in this group!\n🔥 Auto posting started."
-            )
-        except:
-            pass
-
-# ---------------- AUTO SEND ---------------- #
-
-async def auto_send(app):
-
-    count = 0
-
-    while True:
-
-        if groups:
-
-            msg = MESSAGES[count % len(MESSAGES)]
-
-            for group_id in groups:
-
-                try:
-
-                    await app.bot.send_message(
-                        chat_id=group_id,
-                        text=msg
-                    )
-
-                    print(f"Sent to {group_id}")
-
-                except Exception as e:
-
-                    print(f"Error: {e}")
-
-            count += 1
-
-        await asyncio.sleep(30)
-
-# ---------------- START ---------------- #
-
-async def post_init(app):
-
-    asyncio.create_task(auto_send(app))
-
-# ---------------- MAIN ---------------- #
-
-def main():
-
-    Thread(target=run_web).start()
-
-    app = (
-        Application.builder()
-        .token(BOT_TOKEN)
-        .post_init(post_init)
-        .build()
-    )
-
-    app.add_handler(
-        MessageHandler(
-            filters.ALL,
-            detect_group
-        )
-    )
-
-    print("Bot Running...")
-
-    app.run_polling()
 
 if __name__ == "__main__":
     main()
