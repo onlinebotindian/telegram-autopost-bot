@@ -1,3 +1,5 @@
+from flask import Flask
+from threading import Thread
 from telegram import Update, Bot
 from telegram.ext import (
     Application,
@@ -13,26 +15,39 @@ BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
 GROUPS_FILE = "groups.json"
 
 MESSAGES = [
-    "🔥 Stay active everyone! Join For Latest Movies/Series",
+    "🔥 Stay active everyone!Must Join For Latest Movie/Series",
     "📢 https://t.me/+KL1eYgAdfM5iZmU1",
     "🚀 https://t.me/+KL1eYgAdfM5iZmU1"
 ]
 
-# Load groups
+# ---------------- WEB SERVER ---------------- #
+
+app_web = Flask(__name__)
+
+@app_web.route('/')
+def home():
+    return "Bot Running!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app_web.run(host="0.0.0.0", port=port)
+
+# ---------------- GROUP STORAGE ---------------- #
+
 def load_groups():
     if os.path.exists(GROUPS_FILE):
         with open(GROUPS_FILE, "r") as f:
             return json.load(f)
     return []
 
-# Save groups
 def save_groups(groups):
     with open(GROUPS_FILE, "w") as f:
         json.dump(groups, f)
 
 groups = load_groups()
 
-# Detect bot added as admin
+# ---------------- TRACK GROUPS ---------------- #
+
 async def track_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat = update.effective_chat
@@ -44,9 +59,10 @@ async def track_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
             groups.append(chat_id)
             save_groups(groups)
 
-            print(f"Added new group: {chat_id}")
+            print(f"Added Group: {chat_id}")
 
-# Auto sender loop
+# ---------------- AUTO SENDER ---------------- #
+
 async def auto_send(app):
 
     bot: Bot = app.bot
@@ -72,13 +88,16 @@ async def auto_send(app):
 
         count += 1
 
-        await asyncio.sleep(540)  # 9 minutes
+        await asyncio.sleep(540)
 
 async def on_start(app):
-
     asyncio.create_task(auto_send(app))
 
+# ---------------- MAIN ---------------- #
+
 def main():
+
+    Thread(target=run_web).start()
 
     app = (
         Application.builder()
