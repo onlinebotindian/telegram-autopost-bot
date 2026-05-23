@@ -89,7 +89,7 @@ async def auto_send(app):
 
                 print(f"Error: {e}")
 
-        await asyncio.sleep(30)
+        await asyncio.sleep(300)
 
 # =========================
 # Main Bot
