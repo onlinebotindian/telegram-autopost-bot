@@ -9,23 +9,11 @@ from telegram.ext import (
     filters,
 )
 
-# =========================
-# BOT TOKEN
-# =========================
-
 TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
-
-# =========================
-# MESSAGE
-# =========================
 
 MESSAGE = """🔥🔥 Stay active everyone! Must Join For Latest Movie/Series
 https://t.me/+KL1eYgAdfM5iZmU1
 https://t.me/+KL1eYgAdfM5iZmU1"""
-
-# =========================
-# GROUP IDS
-# =========================
 
 groups = {
     -1002678383754,
@@ -37,20 +25,20 @@ groups = {
 }
 
 # =========================
-# FLASK WEB SERVER
+# Flask Keep Alive
 # =========================
 
 web = Flask(__name__)
 
 @web.route("/")
 def home():
-    return "Bot Running Successfully!"
+    return "Bot Running!"
 
 def run_web():
     web.run(host="0.0.0.0", port=10000)
 
 # =========================
-# AUTO DETECT NEW GROUPS
+# Auto Detect Groups
 # =========================
 
 async def track_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -71,73 +59,50 @@ async def track_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 await context.bot.send_message(
                     chat_id=group_id,
-                    text="✅ Auto Post Bot Activated Successfully!"
+                    text="✅ Auto Post Bot Activated!"
                 )
 
     except Exception as e:
-
-        print(f"Track Error: {e}")
+        print(e)
 
 # =========================
-# AUTO SEND LOOP
+# Auto Send Messages
 # =========================
 
 async def auto_send(app):
 
     while True:
 
-        try:
+        for group_id in list(groups):
 
-            for group_id in list(groups):
+            try:
 
-                try:
+                await app.bot.send_message(
+                    chat_id=group_id,
+                    text=MESSAGE,
+                    disable_web_page_preview=True
+                )
 
-                    await app.bot.send_message(
-                        chat_id=group_id,
-                        text=MESSAGE,
-                        disable_web_page_preview=True
-                    )
+                print(f"Sent to {group_id}")
 
-                    print(f"Sent to {group_id}")
+            except Exception as e:
 
-                except Exception as e:
+                print(f"Error: {e}")
 
-                    print(f"Send Error: {e}")
-
-            await asyncio.sleep(30)
-
-        except Exception as e:
-
-            print(f"Loop Crash: {e}")
-
-            await asyncio.sleep(5)
+        await asyncio.sleep(30)
 
 # =========================
-# STARTUP
+# Main Bot
 # =========================
 
-async def on_start(app):
-
-    asyncio.create_task(auto_send(app))
-
-    print("🔥 Auto Sender Started!")
-
-# =========================
-# MAIN
-# =========================
-
-def main():
-
-    threading.Thread(target=run_web).start()
+async def start_bot():
 
     app = (
         ApplicationBuilder()
         .token(TOKEN)
-        .post_init(on_start)
         .build()
     )
 
-    # Detect any activity/new groups
     app.add_handler(
         MessageHandler(
             filters.ALL,
@@ -145,19 +110,27 @@ def main():
         )
     )
 
-    print("✅ Bot Running...")
+    await app.initialize()
+    await app.start()
 
-    app.run_polling(
-        drop_pending_updates=True,
-        close_loop=False,
-        allowed_updates=Update.ALL_TYPES,
-        poll_interval=2,
-        timeout=30
-    )
+    asyncio.create_task(auto_send(app))
+
+    print("✅ Bot Started!")
+
+    await app.updater.start_polling()
+
+    while True:
+        await asyncio.sleep(999999)
 
 # =========================
-# START
+# Start Everything
 # =========================
+
+def main():
+
+    threading.Thread(target=run_web).start()
+
+    asyncio.run(start_bot())
 
 if __name__ == "__main__":
     main()
