@@ -102,7 +102,7 @@ async def auto_send(app):
 
             count += 1
 
-        await asyncio.sleep(540)
+        await asyncio.sleep(40)
 
 # ---------------- START ---------------- #
 
