@@ -1,3 +1,7 @@
+import asyncio
+
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 from flask import Flask
 from threading import Thread
 from telegram import Update, Bot
