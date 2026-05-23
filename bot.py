@@ -97,7 +97,7 @@ async def auto_send(app):
 
         count += 1
 
-        await asyncio.sleep(540)  # 9 minutes
+        await asyncio.sleep(30)  # 9 minutes
 
 # ---------------- START BOT ---------------- #
 
