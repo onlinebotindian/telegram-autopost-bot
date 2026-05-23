@@ -23,7 +23,7 @@ BOT_TOKEN = "8999369476:AAGRgPLOlAd2m_PRljWVtHFU9H8Qe6kbK_s"
 # ---------------- AUTO MESSAGE ---------------- #
 
 MESSAGES = [
-    "🔥🔥 Stay active everyone! Must Join For Latest Movie/Series\nhttps://t.me/+KL1eYgAdfM5iZmU1\nhttps://t.me/+KL1eYgAdfM5iZmU1"
+    "🔥🔥 Stay active everyone! Must Join For Latest Movie/Series\nhttps://t.me/+8xk_1SWS_spjYjdl\nhttps://t.me/+8xk_1SWS_spjYjdl"
 ]
 
 GROUPS_FILE = "groups.json"
